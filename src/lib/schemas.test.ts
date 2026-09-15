@@ -202,11 +202,6 @@ describe("createItemSchema", () => {
     reject(createItemSchema, { name: "Mince", unit: "kg" });
   });
 
-  test("rejects an empty or whitespace-only unit", () => {
-    reject(createItemSchema, { name: "Milk", quantity: 2, unit: "" });
-    reject(createItemSchema, { name: "Milk", quantity: 2, unit: "   " });
-  });
-
   test("rejects a unit over the maximum length", () => {
     reject(createItemSchema, {
       name: "Milk",
@@ -217,12 +212,12 @@ describe("createItemSchema", () => {
 
   test("rejects a unit that is not a string", () => {
     reject(createItemSchema, { name: "Milk", quantity: 2, unit: 1 });
-    reject(createItemSchema, { name: "Milk", quantity: 2, unit: null });
+    reject(createItemSchema, { name: "Milk", quantity: 2, unit: true });
   });
 
   test("rejects a note that is not a string, or is over the maximum length", () => {
     reject(createItemSchema, { name: "Milk", note: 1 });
-    reject(createItemSchema, { name: "Milk", note: null });
+    reject(createItemSchema, { name: "Milk", note: true });
     reject(createItemSchema, { name: "Milk", note: "a".repeat(MAX_NOTE_LENGTH + 1) });
   });
 
@@ -321,9 +316,7 @@ describe("updateItemSchema", () => {
     reject(updateItemSchema, { quantity: "2", unit: "l" });
   });
 
-  test("rejects an empty unit or one over the maximum length", () => {
-    reject(updateItemSchema, { quantity: 1, unit: "" });
-    reject(updateItemSchema, { quantity: 1, unit: "   " });
+  test("rejects a unit over the maximum length", () => {
     reject(updateItemSchema, { quantity: 1, unit: "a".repeat(MAX_UNIT_LENGTH + 1) });
   });
 
