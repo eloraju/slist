@@ -45,6 +45,38 @@ export type List = {
   readonly memberships: readonly Membership[];
 };
 
-export function can(_account: Account, _permission: Permission, _list: List): boolean {
-  throw new Error("not implemented");
+/**
+ * The Role map. Owner holds every Permission; Editor holds all but the three
+ * that belong to Owner alone (CONTEXT.md, "Owner"). Both bundles are spelled
+ * out rather than derived from one another, so adding a Permission forces a
+ * decision about Editor here instead of silently widening it.
+ */
+const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
+  owner: new Set(PERMISSIONS),
+  editor: new Set([
+    "list:read",
+    "list:update",
+    "item:create",
+    "item:update",
+    "item:delete",
+    "item:check",
+    "item:clear_checked",
+    "item:uncheck_all",
+  ]),
+};
+
+/**
+ * An Account is judged by its own Membership on this List and nothing else: a
+ * Membership on another List is not one here, and an Ownerless List simply has
+ * no holder of the Owner-only Permissions — there is no fallback (ADR-0004).
+ */
+function membershipOn(list: List, account: Account): Membership | undefined {
+  return list.memberships.find((membership) => membership.accountId === account.id && membership.listId === list.id);
+}
+
+export function can(account: Account, permission: Permission, list: List): boolean {
+  const membership = membershipOn(list, account);
+  if (!membership) return false;
+
+  return ROLE_PERMISSIONS[membership.role].has(permission);
 }
