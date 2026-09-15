@@ -11,7 +11,8 @@ import { err, ok, type Result } from "../lib/result";
 export type MigrationError =
   | { kind: "migrations_unreadable"; dir: string; name?: string; cause: unknown }
   | { kind: "migration_failed"; name: string; cause: unknown }
-  | { kind: "migration_changed"; name: string };
+  | { kind: "migration_changed"; name: string }
+  | { kind: "migration_missing"; name: string };
 
 /**
  * Two app instances booting at once would otherwise both see the same migration as pending and
@@ -44,8 +45,8 @@ export async function runMigrations(sql: SQL, dir: string): Promise<Result<strin
     const applied = await readAppliedMigrations(lock);
     const pending = files.value.filter((file) => !applied.has(file.name));
 
-    const unchanged = assertAppliedFilesUnchanged(files.value, applied);
-    if (!unchanged.ok) return unchanged;
+    const agreed = assertRepoAndDatabaseAgree(files.value, applied);
+    if (!agreed.ok) return agreed;
 
     const appliedNow: string[] = [];
     for (const file of pending) {
@@ -105,19 +106,22 @@ async function readAppliedMigrations(sql: SQL): Promise<Map<string, string>> {
 }
 
 /**
- * An applied file that has changed on disk means the database and the repo disagree about what
- * the schema is. Refusing to boot is the only honest answer: re-running it is not safe, and
- * pretending it matches hides the drift until a much later query fails.
+ * The database and the repo must describe the same schema, in both directions: an applied file
+ * that changed on disk, and an applied migration whose file is no longer there — a deleted or
+ * renamed file, or an older image pointed at a newer database. Refusing to boot is the only
+ * honest answer: re-running a changed file is not safe, and the schema behind a missing one
+ * cannot be reasoned about at all. Either way the drift surfaces here, at boot, with a name in
+ * it, rather than as a puzzling query failure much later.
  */
-function assertAppliedFilesUnchanged(
+function assertRepoAndDatabaseAgree(
   files: MigrationFile[],
   applied: Map<string, string>,
 ): Result<null, MigrationError> {
-  for (const file of files) {
-    const checksum = applied.get(file.name);
-    if (checksum !== undefined && checksum !== file.checksum) {
-      return err({ kind: "migration_changed", name: file.name });
-    }
+  const onDisk = new Map(files.map((file) => [file.name, file]));
+  for (const [name, checksum] of applied) {
+    const file = onDisk.get(name);
+    if (file === undefined) return err({ kind: "migration_missing", name });
+    if (file.checksum !== checksum) return err({ kind: "migration_changed", name });
   }
   return ok(null);
 }
