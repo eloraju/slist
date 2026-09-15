@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { SQL } from "bun";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestDatabase, type TestDatabase } from "./test-database";
@@ -90,4 +91,67 @@ test("two instances booting at once apply each migration exactly once", async ()
   const appliedByBoth = [...(a.ok ? a.value : []), ...(b.ok ? b.value : [])].sort();
   expect(appliedByBoth).toEqual(["0001_first.sql", "0002_second.sql"]);
   expect(await appliedNames(db)).toEqual(["0001_first.sql", "0002_second.sql"]);
+});
+
+test("a .sql entry that cannot be read comes back as a value, not a throw", async () => {
+  await writeMigration("0001_first.sql", "create table widgets (id text primary key);");
+  // A directory named like a migration is the reproducible stand-in for a file that is
+  // unreadable, or that vanishes between the listing and the read.
+  await mkdir(join(dir, "0002_unreadable.sql"));
+
+  const result = await runMigrations(db.sql, dir);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("unreachable");
+  expect(result.error.kind).toBe("migrations_unreadable");
+});
+
+test("a failing unlock does not hide which migration failed", async () => {
+  // The migration kills every other backend in this database — including the connection holding
+  // the advisory lock — and then fails, so releasing the lock throws on the way out.
+  await writeMigration(
+    "0001_suicidal.sql",
+    `select pg_terminate_backend(pid) from pg_stat_activity
+       where datname = current_database() and pid <> pg_backend_pid();
+     select 1 / 0;`,
+  );
+
+  const result = await runMigrations(db.sql, dir);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("unreachable");
+  expect(result.error.kind).toBe("migration_failed");
+  expect((result.error as { name: string }).name).toBe("0001_suicidal.sql");
+});
+
+test("a failed run releases its connection, so the next run still has a pool to work with", async () => {
+  // Two connections is exactly what one run needs: one reserved for the lock, one for the
+  // transaction. A run that strands its reserved connection leaves the next one waiting forever.
+  const pool = new SQL(db.url, { max: 2 });
+  await writeMigration(
+    "0001_suicidal.sql",
+    `select pg_terminate_backend(pid) from pg_stat_activity
+       where datname = current_database() and pid <> pg_backend_pid();
+     select 1 / 0;`,
+  );
+  await runMigrations(pool, dir).catch(() => undefined);
+
+  await rm(join(dir, "0001_suicidal.sql"));
+  await writeMigration("0001_first.sql", "create table widgets (id text primary key);");
+  const second = await runMigrations(pool, dir);
+  await pool.end();
+
+  expect(second).toEqual({ ok: true, value: ["0001_first.sql"] });
+});
+
+test("an applied migration whose file is gone stops the boot", async () => {
+  await writeMigration("0001_first.sql", "create table widgets (id text primary key);");
+  await runMigrations(db.sql, dir);
+  await rm(join(dir, "0001_first.sql"));
+
+  const result = await runMigrations(db.sql, dir);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("unreachable");
+  expect(result.error).toEqual({ kind: "migration_missing", name: "0001_first.sql" });
 });
