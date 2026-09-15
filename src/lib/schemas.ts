@@ -54,7 +54,17 @@ const quantity = z.number().positive().finite();
  */
 const optionalText = z.string().nullable();
 
-/** A unit with nothing to measure is not a quantity (CONTEXT.md, "Item"). */
+/**
+ * A unit with nothing to measure is not a quantity (CONTEXT.md, "Item").
+ *
+ * The coupling is judged against the **payload**, not against the resulting Item: `PATCH
+ * {unit: "kg"}` on an Item that already has a quantity is refused, so the REST surface requires
+ * a quantity and its unit to travel together. That is deliberate, not an oversight. Judging the
+ * resulting Item would mean reading stored state to validate, which moves the check out of the
+ * pure core — fast, pure and fully unit-tested — for a case neither editor produces, since both
+ * always send all four fields. The rule is strictly stricter than the database constraint, so
+ * nothing it rejects could have been stored.
+ */
 function measuresAQuantity(input: { quantity?: number | null; unit?: string | null }): boolean {
   if (input.unit === undefined || input.unit === null) return true;
 
@@ -79,11 +89,22 @@ function textOrAbsent(value: string | null | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-function withinTextLimits(input: { unit?: string | null; note?: string | null }): boolean {
-  return (input.unit ?? "").length <= MAX_UNIT_LENGTH && (input.note ?? "").length <= MAX_NOTE_LENGTH;
+/**
+ * One limit per refinement, so a rejection names the field the person has to fix. Checking both
+ * together can only report one path, and an over-long unit blamed on the note sends the client's
+ * error message to the wrong input.
+ */
+function withinUnitLimit(input: { unit?: string | null }): boolean {
+  return (input.unit ?? "").length <= MAX_UNIT_LENGTH;
 }
 
-const TEXT_TOO_LONG = { error: "a unit or a note is over its maximum length", path: ["note"] };
+function withinNoteLimit(input: { note?: string | null }): boolean {
+  return (input.note ?? "").length <= MAX_NOTE_LENGTH;
+}
+
+const UNIT_TOO_LONG = { error: `a unit is at most ${MAX_UNIT_LENGTH} characters`, path: ["unit"] };
+
+const NOTE_TOO_LONG = { error: `a note is at most ${MAX_NOTE_LENGTH} characters`, path: ["note"] };
 
 export const createListSchema: z.ZodType<CreateListInput> = z.strictObject({ name: listName });
 
@@ -104,7 +125,8 @@ export const createItemSchema: z.ZodType<CreateItemInput> = z
   })
   .transform(normaliseCreateItem)
   .refine(measuresAQuantity, UNIT_NEEDS_A_QUANTITY)
-  .refine(withinTextLimits, TEXT_TOO_LONG);
+  .refine(withinUnitLimit, UNIT_TOO_LONG)
+  .refine(withinNoteLimit, NOTE_TOO_LONG);
 
 /** On create, "nothing" is the key being absent: there is no field yet to clear. */
 function normaliseCreateItem(input: {
@@ -135,7 +157,8 @@ export const updateItemSchema: z.ZodType<UpdateItemInput> = z
   .transform(normaliseUpdateItem)
   .refine(changesSomething, { error: "an update must change something" })
   .refine(measuresAQuantity, UNIT_NEEDS_A_QUANTITY)
-  .refine(withinTextLimits, TEXT_TOO_LONG);
+  .refine(withinUnitLimit, UNIT_TOO_LONG)
+  .refine(withinNoteLimit, NOTE_TOO_LONG);
 
 /**
  * On update, "nothing" is the key present and `null`: that is the instruction to clear a field,
