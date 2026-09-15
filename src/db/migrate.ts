@@ -9,7 +9,7 @@ import { err, ok, type Result } from "../lib/result";
  * boot fails can read the file that failed.
  */
 export type MigrationError =
-  | { kind: "migrations_unreadable"; dir: string; cause: unknown }
+  | { kind: "migrations_unreadable"; dir: string; name?: string; cause: unknown }
   | { kind: "migration_failed"; name: string; cause: unknown }
   | { kind: "migration_changed"; name: string };
 
@@ -70,8 +70,14 @@ async function readMigrationFiles(dir: string): Promise<Result<MigrationFile[], 
 
   const files: MigrationFile[] = [];
   for (const name of names) {
-    const text = await Bun.file(join(dir, name)).text();
-    files.push({ name, sql: text, checksum: Bun.SHA256.hash(text, "hex") });
+    // Reading is guarded as well as listing: a file can be unreadable, or can vanish between the
+    // two, and the boot has to report that as "migration failed" rather than an unhandled throw.
+    try {
+      const text = await Bun.file(join(dir, name)).text();
+      files.push({ name, sql: text, checksum: Bun.SHA256.hash(text, "hex") });
+    } catch (cause) {
+      return err({ kind: "migrations_unreadable", dir, name, cause });
+    }
   }
   return ok(files);
 }
