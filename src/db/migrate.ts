@@ -1,4 +1,4 @@
-import type { SQL } from "bun";
+import type { ReservedSQL, SQL } from "bun";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { err, ok, type Result } from "../lib/result";
@@ -55,7 +55,24 @@ export async function runMigrations(sql: SQL, dir: string): Promise<Result<strin
     }
     return ok(appliedNow);
   } finally {
+    await releaseMigrationLock(lock);
+  }
+}
+
+/**
+ * A throw in a `finally` replaces whatever the block was returning, so an unlock that fails —
+ * because the migration took the connection down with it, or Postgres went away — would hide the
+ * name of the file that actually failed. The unlock is best effort: Postgres drops session
+ * advisory locks when the connection ends, so a failed unlock has already been released by the
+ * only thing that could still be holding it. Returning the connection to the pool is not
+ * optional, and happens either way.
+ */
+async function releaseMigrationLock(lock: ReservedSQL): Promise<void> {
+  try {
     await lock`select pg_advisory_unlock(${MIGRATION_LOCK_KEY})`;
+  } catch (cause) {
+    console.warn("Could not release the migration advisory lock; the connection ended with it:", cause);
+  } finally {
     lock.release();
   }
 }
