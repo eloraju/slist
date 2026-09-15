@@ -46,16 +46,29 @@ export async function selectListWithMemberships(sql: SQL, listId: string): Promi
   return { list: toListRecord(list), memberships: memberships.map(toMembership) };
 }
 
-/** No `order by`: the server orders nothing, Lists included. The client sorts what it renders. */
-export async function selectListsForAccount(sql: SQL, accountId: string): Promise<ListRecord[]> {
+/**
+ * The Lists this Account has a Membership on, each with all of its Memberships, as candidates for
+ * `listsVisibleTo` to judge. The `where` clause scopes the fetch; it does not decide visibility —
+ * that is `can()`'s job, and this function makes no decisions (CONVENTIONS.md).
+ *
+ * No `order by`: the server orders nothing, Lists included. The client sorts what it renders.
+ */
+export async function selectListCandidatesFor(sql: SQL, accountId: string): Promise<ListWithMemberships[]> {
   const rows = (await sql`
-    select lists.id, lists.name, lists.created_at
+    select lists.id, lists.name, lists.created_at, memberships.list_id, memberships.account_id, memberships.role
     from lists
     join memberships on memberships.list_id = lists.id
-    where memberships.account_id = ${accountId}
-  `) as ListRow[];
+    where lists.id in (select list_id from memberships where account_id = ${accountId})
+  `) as (ListRow & MembershipRow)[];
 
-  return rows.map(toListRecord);
+  const candidates = new Map<string, ListWithMemberships>();
+  for (const row of rows) {
+    const candidate = candidates.get(row.id) ?? { list: toListRecord(row), memberships: [] };
+    candidate.memberships.push(toMembership(row));
+    candidates.set(row.id, candidate);
+  }
+
+  return [...candidates.values()];
 }
 
 export async function updateListName(sql: SQL, listId: string, name: string): Promise<ListRecord | undefined> {

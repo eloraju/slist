@@ -2,7 +2,7 @@ import type { SQL } from "bun";
 import type { AppError } from "../lib/errors";
 import { can, type Account, type Permission } from "../lib/permissions";
 import { err, ok, type Result } from "../lib/result";
-import { selectListWithMemberships, type ListRecord } from "./queries";
+import { selectListWithMemberships, type ListRecord, type ListWithMemberships } from "./queries";
 
 /**
  * The one gate every List and Item action passes through. `can()` is the only capability check in
@@ -26,4 +26,17 @@ export async function authoriseList(
   if (!can(actor, permission, list)) return err({ kind: "forbidden", permission });
 
   return ok(found.list);
+}
+
+/**
+ * The index endpoint's gate. The query scopes the candidates — fetching every List in the
+ * database to filter in memory would be absurd — but it does not get to decide: `can()` does,
+ * here, the same function every other endpoint asks. Today every Membership implies `list:read`
+ * and the two agree; the day a Role appears that does not, this endpoint changes with all the
+ * others instead of quietly outliving them (ADR-0005).
+ */
+export function listsVisibleTo(actor: Account, candidates: ListWithMemberships[]): ListRecord[] {
+  return candidates
+    .filter(({ list, memberships }) => can(actor, "list:read", { id: list.id, memberships }))
+    .map(({ list }) => list);
 }

@@ -4,8 +4,14 @@ import type { AppError } from "../lib/errors";
 import type { Account } from "../lib/permissions";
 import { err, ok, type Result } from "../lib/result";
 import type { CreateListInput, UpdateListInput } from "../lib/schemas";
-import { authoriseList } from "./access";
-import { deleteListById, insertListWithOwner, selectListsForAccount, updateListName, type ListRecord } from "./queries";
+import { authoriseList, listsVisibleTo } from "./access";
+import {
+  deleteListById,
+  insertListWithOwner,
+  selectListCandidatesFor,
+  updateListName,
+  type ListRecord,
+} from "./queries";
 
 /** The decisions about Lists. Every one of them starts by asking `can()` (ADR-0005). */
 export type ListWithItems = { list: ListRecord; items: ItemRecord[] };
@@ -19,8 +25,9 @@ export async function createList(
   return ok(await insertListWithOwner(sql, input.name, actor.id));
 }
 
+/** The gate runs here, not in the `where` clause: `can()` decides what the Account may see. */
 export async function listListsFor(sql: SQL, actor: Account): Promise<Result<ListRecord[], AppError>> {
-  return ok(await selectListsForAccount(sql, actor.id));
+  return ok(listsVisibleTo(actor, await selectListCandidatesFor(sql, actor.id)));
 }
 
 export async function readList(sql: SQL, actor: Account, listId: string): Promise<Result<ListWithItems, AppError>> {
