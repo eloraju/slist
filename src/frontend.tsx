@@ -8,11 +8,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./ui/App";
+import { SessionGate } from "./ui/SessionGate";
 
 const elem = document.getElementById("root")!;
 const app = (
   <StrictMode>
-    <App />
+    <SessionGate>
+      <App />
+    </SessionGate>
   </StrictMode>
 );
 
