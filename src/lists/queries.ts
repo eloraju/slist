@@ -46,13 +46,13 @@ export async function selectListWithMemberships(sql: SQL, listId: string): Promi
   return { list: toListRecord(list), memberships: memberships.map(toMembership) };
 }
 
+/** No `order by`: the server orders nothing, Lists included. The client sorts what it renders. */
 export async function selectListsForAccount(sql: SQL, accountId: string): Promise<ListRecord[]> {
   const rows = (await sql`
     select lists.id, lists.name, lists.created_at
     from lists
     join memberships on memberships.list_id = lists.id
     where memberships.account_id = ${accountId}
-    order by lower(lists.name)
   `) as ListRow[];
 
   return rows.map(toListRecord);

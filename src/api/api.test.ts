@@ -88,15 +88,17 @@ describe("POST /api/lists", () => {
 });
 
 describe("GET /api/lists", () => {
+  // The order is not asserted: the server promises which Lists come back, never in what order.
   test("returns the Lists the Account is a Member of", async () => {
     const mine = await server.signIn();
-    const listId = await createList(mine, "Mine");
+    const first = await createList(mine, "Weekly shop");
+    const second = await createList(mine, "Barbecue");
 
     const response = await call("GET", "/api/lists", mine);
 
     expect(response.status).toBe(200);
     const body = await json(response);
-    expect((body.lists as Json[]).map((list) => list.id)).toEqual([listId]);
+    expect((body.lists as Json[]).map((list) => list.id).sort()).toEqual([first, second].sort());
   });
 
   test("shows nothing of another Account's Lists", async () => {
