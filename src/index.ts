@@ -6,6 +6,7 @@ import { runMigrations } from "./db/migrate";
 import { createAuth, type Auth } from "./auth/auth";
 import { resolveSigningSecret } from "./auth/signing-secret";
 import { fromPromise } from "./lib/result";
+import { apiRoutes } from "./api/routes";
 
 const config = loadConfig();
 
@@ -26,16 +27,7 @@ const server = serve({
     "/": (req) => serveAppShell(req),
     "/*": index,
 
-    "/api/hello": {
-      async GET() {
-        return Response.json({ message: "Hello, world!", method: "GET" });
-      },
-      async PUT() {
-        return Response.json({ message: "Hello, world!", method: "PUT" });
-      },
-    },
-
-    "/api/hello/:name": async (req) => Response.json({ message: `Hello, ${req.params.name}!` }),
+    ...apiRoutes({ sql, auth }),
   },
 
   development: process.env.NODE_ENV !== "production" && { hmr: true, console: true },
