@@ -1,13 +1,13 @@
 import type { SQL } from "bun";
 import { selectItemsForList, type ItemRecord } from "../items/queries";
 import type { AppError } from "../lib/errors";
-import type { Account } from "../lib/permissions";
+import type { Account, Role } from "../lib/permissions";
 import { err, ok, type Result } from "../lib/result";
 import type { CreateListInput, UpdateListInput } from "../lib/schemas";
 import { authoriseList, listsVisibleTo } from "./access";
 import {
   deleteListById,
-  insertListWithOwner,
+  insertListWithMembership,
   selectListCandidatesFor,
   updateListName,
   type ListRecord,
@@ -16,13 +16,18 @@ import {
 /** The decisions about Lists. Every one of them starts by asking `can()` (ADR-0005). */
 export type ListWithItems = { list: ListRecord; items: ItemRecord[] };
 
-/** Creating a List makes its creator an Owner; nobody has to be granted access to their own List. */
+/**
+ * The creator of a List starts as its Owner (CONTEXT.md, "Owner") — a rule about who holds what,
+ * so it is decided here rather than spelled into the insert.
+ */
+const CREATOR_ROLE: Role = "owner";
+
 export async function createList(
   sql: SQL,
   actor: Account,
   input: CreateListInput,
 ): Promise<Result<ListRecord, AppError>> {
-  return ok(await insertListWithOwner(sql, input.name, actor.id));
+  return ok(await insertListWithMembership(sql, input.name, actor.id, CREATOR_ROLE));
 }
 
 /** The gate runs here, not in the `where` clause: `can()` decides what the Account may see. */

@@ -13,11 +13,18 @@ type ListRow = { id: string; name: string; created_at: Date };
 type MembershipRow = { list_id: string; account_id: string; role: Role };
 
 /**
- * The List and its creator's Owner Membership commit together: a List that exists with nobody
- * able to see it would be unreachable forever, since only `can()` grants access and it reads
- * Memberships.
+ * The List and its creator's Membership commit together: a List that exists with nobody able to
+ * see it would be unreachable forever, since only `can()` grants access and it reads Memberships.
+ *
+ * Which Role the creator gets is the domain's decision, so it arrives as an argument — and as a
+ * `Role`, which a typo could not be.
  */
-export async function insertListWithOwner(sql: SQL, name: string, ownerAccountId: string): Promise<ListRecord> {
+export async function insertListWithMembership(
+  sql: SQL,
+  name: string,
+  accountId: string,
+  role: Role,
+): Promise<ListRecord> {
   const row = (await sql.begin(async (tx) => {
     const [created] = (await tx`
       insert into lists (name) values (${name})
@@ -27,7 +34,7 @@ export async function insertListWithOwner(sql: SQL, name: string, ownerAccountId
 
     await tx`
       insert into memberships (list_id, account_id, role)
-      values (${created.id}, ${ownerAccountId}, 'owner')
+      values (${created.id}, ${accountId}, ${role})
     `;
     return created;
   })) as unknown as ListRow;
