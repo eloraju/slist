@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { itemFieldsFrom, type ItemFields } from "../lib/item-draft";
 import type { Item } from "./api";
 
 /**
@@ -8,15 +9,8 @@ import type { Item } from "./api";
 export type ItemRowProps = {
   item: Item;
   onToggleChecked: (item: Item) => void;
-  onSave: (item: Item, patch: ItemPatch) => void;
+  onSave: (item: Item, fields: ItemFields) => void;
   onDelete: (item: Item) => void;
-};
-
-export type ItemPatch = {
-  name: string;
-  quantity: number | null;
-  unit: string | null;
-  note: string | null;
 };
 
 export function ItemRow({ item, onToggleChecked, onSave, onDelete }: ItemRowProps) {
@@ -28,9 +22,9 @@ export function ItemRow({ item, onToggleChecked, onSave, onDelete }: ItemRowProp
         <ItemEditor
           item={item}
           onCancel={() => setEditing(false)}
-          onSave={(patch) => {
+          onSave={(fields) => {
             setEditing(false);
-            onSave(item, patch);
+            onSave(item, fields);
           }}
         />
       </li>
@@ -64,7 +58,7 @@ export function ItemRow({ item, onToggleChecked, onSave, onDelete }: ItemRowProp
 
 type ItemEditorProps = {
   item: Item;
-  onSave: (patch: ItemPatch) => void;
+  onSave: (fields: ItemFields) => void;
   onCancel: () => void;
 };
 
@@ -74,21 +68,22 @@ function ItemEditor({ item, onSave, onCancel }: ItemEditorProps) {
   const [quantity, setQuantity] = useState(item.quantity === null ? "" : String(item.quantity));
   const [unit, setUnit] = useState(item.unit ?? "");
   const [note, setNote] = useState(item.note ?? "");
+  const [rejected, setRejected] = useState<string | null>(null);
 
   return (
     <form
       className="item-editor"
       onSubmit={(event) => {
         event.preventDefault();
-        // A unit measures nothing on its own, so clearing the quantity clears the unit here too
-        // rather than sending a payload the server will refuse.
-        const parsedQuantity = numberOrNull(quantity);
-        onSave({
-          name: name.trim(),
-          quantity: parsedQuantity,
-          unit: parsedQuantity === null || unit.trim() === "" ? null : unit.trim(),
-          note: note.trim() === "" ? null : note.trim(),
-        });
+        const fields = itemFieldsFrom({ name, quantity, unit, note });
+        // A draft the pure core refuses stays on screen with its message: Save does nothing, and
+        // nothing is sent, so the typo is still there to correct.
+        if (!fields.ok) {
+          setRejected(`"${fields.error.value}" is not a number`);
+          return;
+        }
+        setRejected(null);
+        onSave(fields.value);
       }}
     >
       <input aria-label="Name" value={name} onChange={(event) => setName(event.target.value)} />
@@ -104,14 +99,7 @@ function ItemEditor({ item, onSave, onCancel }: ItemEditorProps) {
       <button type="button" onClick={onCancel}>
         Cancel
       </button>
+      {rejected !== null && <span className="error">{rejected}</span>}
     </form>
   );
-}
-
-export function numberOrNull(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
 }

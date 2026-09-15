@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { byCheckedThenName, byName } from "../lib/sort";
 import * as api from "./api";
 import type { Item, ListSummary } from "./api";
-import { ItemRow, numberOrNull, type ItemPatch } from "./ItemRow";
+import { itemFieldsFrom, type ItemFields } from "../lib/item-draft";
+import { ItemRow } from "./ItemRow";
 import "../index.css";
 
 /**
@@ -71,7 +72,7 @@ export function App() {
       setItems([]);
     });
 
-  const addItem = (draft: ItemPatch) =>
+  const addItem = (draft: ItemFields) =>
     run(async () => {
       if (selected === null) return;
       const created = await api.addItem(selected.id, {
@@ -90,10 +91,10 @@ export function App() {
       replaceItem(await api.setItemChecked(listId, item.id, !item.checked));
     });
 
-  const saveItem = (item: Item, patch: ItemPatch) =>
+  const saveItem = (item: Item, fields: ItemFields) =>
     run(async () => {
       if (selected === null) return;
-      replaceItem(await api.editItem(selected.id, item.id, patch));
+      replaceItem(await api.editItem(selected.id, item.id, fields));
     });
 
   const deleteItem = (item: Item) =>
@@ -264,24 +265,26 @@ function ListHeader({
   );
 }
 
-function AddItemForm({ onAdd }: { onAdd: (draft: ItemPatch) => void }) {
+function AddItemForm({ onAdd }: { onAdd: (fields: ItemFields) => void }) {
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("");
   const [note, setNote] = useState("");
+  const [rejected, setRejected] = useState<string | null>(null);
 
   return (
     <form
       className="add-item"
       onSubmit={(event) => {
         event.preventDefault();
-        const parsedQuantity = numberOrNull(quantity);
-        onAdd({
-          name: name.trim(),
-          quantity: parsedQuantity,
-          unit: parsedQuantity === null || unit.trim() === "" ? null : unit.trim(),
-          note: note.trim() === "" ? null : note.trim(),
-        });
+        const fields = itemFieldsFrom({ name, quantity, unit, note });
+        // The draft survives a refusal, so a mistyped quantity is still there to correct.
+        if (!fields.ok) {
+          setRejected(`"${fields.error.value}" is not a number`);
+          return;
+        }
+        setRejected(null);
+        onAdd(fields.value);
         setName("");
         setQuantity("");
         setUnit("");
@@ -299,6 +302,7 @@ function AddItemForm({ onAdd }: { onAdd: (draft: ItemPatch) => void }) {
       <input aria-label="Unit" placeholder="Unit" value={unit} onChange={(event) => setUnit(event.target.value)} />
       <input aria-label="Note" placeholder="Note" value={note} onChange={(event) => setNote(event.target.value)} />
       <button type="submit">Add</button>
+      {rejected !== null && <span className="error">{rejected}</span>}
     </form>
   );
 }
