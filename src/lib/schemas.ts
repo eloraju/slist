@@ -40,21 +40,55 @@ export type ClearCheckedItemsInput = Record<string, never>;
 
 export type UncheckAllItemsInput = Record<string, never>;
 
-const notImplemented = <T>(): z.ZodType<T> =>
-  z.any().transform((): T => {
-    throw new Error("not implemented");
-  }) as unknown as z.ZodType<T>;
+/** Trimmed on the way in, so a name is never stored with edge whitespace. */
+const listName = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 
-export const createListSchema = notImplemented<CreateListInput>();
+const itemName = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 
-export const updateListSchema = notImplemented<UpdateListInput>();
+const quantity = z.number().positive().finite();
 
-export const createItemSchema = notImplemented<CreateItemInput>();
+const unit = z.string().trim().min(1).max(MAX_UNIT_LENGTH);
 
-export const updateItemSchema = notImplemented<UpdateItemInput>();
+const note = z.string().trim().max(MAX_NOTE_LENGTH);
 
-export const setItemCheckedSchema = notImplemented<SetItemCheckedInput>();
+/** A unit with nothing to measure is not a quantity (CONTEXT.md, "Item"). */
+function measuresAQuantity(input: { quantity?: number | null; unit?: string | null }): boolean {
+  if (input.unit === undefined || input.unit === null) return true;
 
-export const clearCheckedItemsSchema = notImplemented<ClearCheckedItemsInput>();
+  return typeof input.quantity === "number";
+}
 
-export const uncheckAllItemsSchema = notImplemented<UncheckAllItemsInput>();
+const UNIT_NEEDS_A_QUANTITY = { error: "a unit needs a quantity to measure", path: ["unit"] };
+
+function changesSomething(input: object): boolean {
+  return Object.keys(input).length > 0;
+}
+
+export const createListSchema: z.ZodType<CreateListInput> = z.strictObject({ name: listName });
+
+export const updateListSchema: z.ZodType<UpdateListInput> = z.strictObject({ name: listName });
+
+export const createItemSchema: z.ZodType<CreateItemInput> = z
+  .strictObject({
+    name: itemName,
+    quantity: quantity.optional(),
+    unit: unit.optional(),
+    note: note.optional(),
+  })
+  .refine(measuresAQuantity, UNIT_NEEDS_A_QUANTITY);
+
+export const updateItemSchema: z.ZodType<UpdateItemInput> = z
+  .strictObject({
+    name: itemName.optional(),
+    quantity: quantity.nullable().optional(),
+    unit: unit.nullable().optional(),
+    note: note.nullable().optional(),
+  })
+  .refine(changesSomething, { error: "an update must change something" })
+  .refine(measuresAQuantity, UNIT_NEEDS_A_QUANTITY);
+
+export const setItemCheckedSchema: z.ZodType<SetItemCheckedInput> = z.strictObject({ checked: z.boolean() });
+
+export const clearCheckedItemsSchema: z.ZodType<ClearCheckedItemsInput> = z.strictObject({});
+
+export const uncheckAllItemsSchema: z.ZodType<UncheckAllItemsInput> = z.strictObject({});
