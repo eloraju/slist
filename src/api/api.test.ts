@@ -87,6 +87,21 @@ describe("POST /api/lists", () => {
   });
 });
 
+describe("the session check", () => {
+  test("a session check that cannot reach the database is a 503, not a bare 500", async () => {
+    const broken = await createTestServer();
+    const actor = await broken.signIn();
+    // Better Auth throws when its pool is gone; the boundary must turn that into a value.
+    await broken.sql.end();
+
+    const response = await fetch(`${broken.url}/api/lists`, { headers: { cookie: actor.cookie } });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "session_unavailable" });
+    await broken.stop();
+  });
+});
+
 describe("GET /api/lists", () => {
   // The order is not asserted: the server promises which Lists come back, never in what order.
   test("returns the Lists the Account is a Member of", async () => {

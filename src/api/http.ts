@@ -11,6 +11,8 @@ export function statusFor(error: AppError): number {
   switch (error.kind) {
     case "unauthenticated":
       return 401;
+    case "session_unavailable":
+      return 503;
     case "forbidden":
       return 403;
     case "not_found":

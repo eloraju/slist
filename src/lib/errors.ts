@@ -9,9 +9,14 @@ import type { Permission } from "./permissions";
  * `not_found` covers a List an Account has no Membership on: it cannot see the List at all
  * (CONTEXT.md, "Membership"), so it is never told that one exists. `forbidden` is for a Member
  * who can see the List but lacks the Permission for this action.
+ *
+ * `session_unavailable` is not the same answer as `unauthenticated`: the visitor's session could
+ * not be checked at all, and telling them they are signed out would be a lie that costs them
+ * their Anonymous Account if they act on it.
  */
 export type AppError =
   | { kind: "unauthenticated" }
+  | { kind: "session_unavailable" }
   | { kind: "not_found" }
   | { kind: "forbidden"; permission: Permission }
   | { kind: "invalid_request"; issues: RequestIssue[] };
