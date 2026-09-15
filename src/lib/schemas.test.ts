@@ -337,6 +337,100 @@ describe("updateItemSchema", () => {
   });
 });
 
+/**
+ * "Empty means no note": the UI clears a note by emptying the text input and
+ * saving, which is what a text input naturally sends, so an empty or
+ * whitespace-only note is accepted and normalised rather than rejected. The
+ * property that matters is that exactly one representation of "no note"
+ * reaches the database, so the display and sort code never handles two.
+ */
+describe("createItemSchema, an empty note means no note", () => {
+  test("normalises an empty note to absent", () => {
+    const parsed = accept(createItemSchema, { name: "Milk", note: "" });
+
+    expect(Object.hasOwn(parsed, "note")).toBe(false);
+    expect(parsed).toEqual({ name: "Milk" });
+  });
+
+  test("normalises a whitespace-only note to absent", () => {
+    for (const note of ["   ", "\t\n"]) {
+      const parsed = accept(createItemSchema, { name: "Milk", note });
+
+      expect(Object.hasOwn(parsed, "note")).toBe(false);
+      expect(parsed).toEqual({ name: "Milk" });
+    }
+  });
+
+  test("normalising the note does not disturb the other fields", () => {
+    const parsed = accept(createItemSchema, { name: "Mince", quantity: 0.5, unit: "kg", note: "  " });
+
+    expect(Object.hasOwn(parsed, "note")).toBe(false);
+    expect(parsed).toEqual({ name: "Mince", quantity: 0.5, unit: "kg" });
+  });
+
+  test("every spelling of no note parses to exactly one representation", () => {
+    const spellings = [
+      { name: "Milk" },
+      { name: "Milk", note: "" },
+      { name: "Milk", note: "   " },
+      { name: "Milk", note: "\t\n" },
+    ];
+
+    const parsed = spellings.map((input) => accept(createItemSchema, input));
+    const representations = new Set(parsed.map((result) => JSON.stringify(result)));
+
+    for (const result of parsed) {
+      expect(Object.keys(result).sort()).toEqual(["name"]);
+    }
+    expect(representations.size).toBe(1);
+  });
+});
+
+describe("updateItemSchema, an empty note means no note", () => {
+  test("normalises an empty note to a cleared note", () => {
+    const parsed = accept(updateItemSchema, { note: "" });
+
+    expect(parsed.note).toBe(null);
+    expect(parsed).toEqual({ note: null });
+  });
+
+  test("normalises a whitespace-only note to a cleared note", () => {
+    for (const note of ["   ", "\t\n"]) {
+      expect(accept(updateItemSchema, { note }).note).toBe(null);
+    }
+  });
+
+  test("an emptied note and an explicit null are the same instruction", () => {
+    const viaEmpty = accept(updateItemSchema, { note: "" });
+    const viaWhitespace = accept(updateItemSchema, { note: "   " });
+    const viaNull = accept(updateItemSchema, { note: null });
+
+    expect(viaEmpty).toEqual(viaNull);
+    expect(viaWhitespace).toEqual(viaNull);
+    expect(Object.keys(viaEmpty).sort()).toEqual(Object.keys(viaNull).sort());
+  });
+
+  test("clearing the note alongside other edits is still one payload", () => {
+    const parsed = accept(updateItemSchema, { name: "Oat milk", note: "" });
+
+    expect(parsed).toEqual({ name: "Oat milk", note: null });
+  });
+
+  test("an emptied note on its own still counts as a change", () => {
+    expect(accept(updateItemSchema, { note: "   " })).toEqual({ note: null });
+  });
+
+  test("every spelling of no note parses to exactly one representation", () => {
+    const spellings = [{ note: null }, { note: "" }, { note: "   " }, { note: "\t\n" }];
+
+    const parsed = spellings.map((input) => accept(updateItemSchema, input));
+    const representations = new Set(parsed.map((result) => JSON.stringify(result)));
+
+    expect(representations.size).toBe(1);
+    expect([...representations]).toEqual(['{"note":null}']);
+  });
+});
+
 describe("setItemCheckedSchema", () => {
   test("accepts Checked", () => {
     expect(accept(setItemCheckedSchema, { checked: true })).toEqual({ checked: true });
