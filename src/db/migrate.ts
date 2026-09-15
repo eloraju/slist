@@ -1,0 +1,143 @@
+import type { ReservedSQL, SQL } from "bun";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { err, ok, type Result } from "../lib/result";
+
+/**
+ * Numbered `.sql` files applied on boot, each inside a transaction, tracked in `_migrations`
+ * (ADR-0007). No ORM and no generated diffs: the files are the schema, and a self-hoster whose
+ * boot fails can read the file that failed.
+ */
+export type MigrationError =
+  | { kind: "migrations_unreadable"; dir: string; name?: string; cause: unknown }
+  | { kind: "migration_failed"; name: string; cause: unknown }
+  | { kind: "migration_changed"; name: string }
+  | { kind: "migration_missing"; name: string };
+
+/**
+ * Two app instances booting at once would otherwise both see the same migration as pending and
+ * both try to apply it. A session-level advisory lock serialises them; the loser waits, then
+ * finds nothing to do. The key is an arbitrary constant, shared only with other copies of slist.
+ */
+const MIGRATION_LOCK_KEY = 4823551076;
+
+const CREATE_MIGRATIONS_TABLE = `
+  create table if not exists _migrations (
+    name text primary key,
+    checksum text not null,
+    applied_at timestamptz not null default now()
+  )
+`;
+
+type MigrationFile = { name: string; sql: string; checksum: string };
+
+export async function runMigrations(sql: SQL, dir: string): Promise<Result<string[], MigrationError>> {
+  const files = await readMigrationFiles(dir);
+  if (!files.ok) return files;
+
+  const lock = await sql.reserve();
+  try {
+    await lock`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`;
+    // Created under the lock: concurrent `create table if not exists` for the same table can fail
+    // on Postgres' own catalogue unique index rather than being a no-op.
+    await lock.unsafe(CREATE_MIGRATIONS_TABLE);
+
+    const applied = await readAppliedMigrations(lock);
+    const pending = files.value.filter((file) => !applied.has(file.name));
+
+    const agreed = assertRepoAndDatabaseAgree(files.value, applied);
+    if (!agreed.ok) return agreed;
+
+    const appliedNow: string[] = [];
+    for (const file of pending) {
+      const result = await applyMigration(sql, file);
+      if (!result.ok) return result;
+      appliedNow.push(file.name);
+    }
+    return ok(appliedNow);
+  } finally {
+    await releaseMigrationLock(lock);
+  }
+}
+
+/**
+ * A throw in a `finally` replaces whatever the block was returning, so an unlock that fails —
+ * because the migration took the connection down with it, or Postgres went away — would hide the
+ * name of the file that actually failed. The unlock is best effort: Postgres drops session
+ * advisory locks when the connection ends, so a failed unlock has already been released by the
+ * only thing that could still be holding it. Returning the connection to the pool is not
+ * optional, and happens either way.
+ */
+async function releaseMigrationLock(lock: ReservedSQL): Promise<void> {
+  try {
+    await lock`select pg_advisory_unlock(${MIGRATION_LOCK_KEY})`;
+  } catch (cause) {
+    console.warn("Could not release the migration advisory lock; the connection ended with it:", cause);
+  } finally {
+    lock.release();
+  }
+}
+
+async function readMigrationFiles(dir: string): Promise<Result<MigrationFile[], MigrationError>> {
+  let names: string[];
+  try {
+    names = (await readdir(dir)).filter((name) => name.endsWith(".sql")).sort();
+  } catch (cause) {
+    return err({ kind: "migrations_unreadable", dir, cause });
+  }
+
+  const files: MigrationFile[] = [];
+  for (const name of names) {
+    // Reading is guarded as well as listing: a file can be unreadable, or can vanish between the
+    // two, and the boot has to report that as "migration failed" rather than an unhandled throw.
+    try {
+      const text = await Bun.file(join(dir, name)).text();
+      files.push({ name, sql: text, checksum: Bun.SHA256.hash(text, "hex") });
+    } catch (cause) {
+      return err({ kind: "migrations_unreadable", dir, name, cause });
+    }
+  }
+  return ok(files);
+}
+
+async function readAppliedMigrations(sql: SQL): Promise<Map<string, string>> {
+  const rows = (await sql`select name, checksum from _migrations`) as { name: string; checksum: string }[];
+  return new Map(rows.map((row) => [row.name, row.checksum]));
+}
+
+/**
+ * The database and the repo must describe the same schema, in both directions: an applied file
+ * that changed on disk, and an applied migration whose file is no longer there — a deleted or
+ * renamed file, or an older image pointed at a newer database. Refusing to boot is the only
+ * honest answer: re-running a changed file is not safe, and the schema behind a missing one
+ * cannot be reasoned about at all. Either way the drift surfaces here, at boot, with a name in
+ * it, rather than as a puzzling query failure much later.
+ */
+function assertRepoAndDatabaseAgree(
+  files: MigrationFile[],
+  applied: Map<string, string>,
+): Result<null, MigrationError> {
+  const onDisk = new Map(files.map((file) => [file.name, file]));
+  for (const [name, checksum] of applied) {
+    const file = onDisk.get(name);
+    if (file === undefined) return err({ kind: "migration_missing", name });
+    if (file.checksum !== checksum) return err({ kind: "migration_changed", name });
+  }
+  return ok(null);
+}
+
+/**
+ * The file's statements and the `_migrations` row commit together, so a migration that fails
+ * half way leaves no trace and the next boot retries it from the top.
+ */
+async function applyMigration(sql: SQL, file: MigrationFile): Promise<Result<null, MigrationError>> {
+  try {
+    await sql.begin(async (tx) => {
+      await tx.unsafe(file.sql);
+      await tx`insert into _migrations (name, checksum) values (${file.name}, ${file.checksum})`;
+    });
+    return ok(null);
+  } catch (cause) {
+    return err({ kind: "migration_failed", name: file.name, cause });
+  }
+}

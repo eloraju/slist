@@ -1,0 +1,39 @@
+# `docker compose up` with a copied .env must produce a working app (ADR-0008).
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # The app reaches Postgres over the compose network, whatever the operator's .env says about
+      # reaching it from their laptop.
+      DATABASE_URL: postgres://${POSTGRES_USER:-slist}:${POSTGRES_PASSWORD:-slist}@postgres:5432/${POSTGRES_DB:-slist}
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        # The app migrates on boot, so it must not start against a Postgres that is still
+        # initialising its data directory.
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    # Major version pinned: a Postgres major upgrade needs an explicit data migration, never a
+    # surprise on `docker compose pull`.
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-slist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slist}
+      POSTGRES_DB: ${POSTGRES_DB:-slist}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-slist} -d ${POSTGRES_DB:-slist}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
