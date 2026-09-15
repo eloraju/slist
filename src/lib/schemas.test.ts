@@ -354,6 +354,13 @@ describe("createItemSchema, an empty note means no note", () => {
     }
   });
 
+  test("normalises a null note to absent", () => {
+    const parsed = accept(createItemSchema, { name: "Milk", note: null });
+
+    expect(Object.hasOwn(parsed, "note")).toBe(false);
+    expect(parsed).toEqual({ name: "Milk" });
+  });
+
   test("normalising the note does not disturb the other fields", () => {
     const parsed = accept(createItemSchema, { name: "Mince", quantity: 0.5, unit: "kg", note: "  " });
 
@@ -367,6 +374,7 @@ describe("createItemSchema, an empty note means no note", () => {
       { name: "Milk", note: "" },
       { name: "Milk", note: "   " },
       { name: "Milk", note: "\t\n" },
+      { name: "Milk", note: null },
     ];
 
     const parsed = spellings.map((input) => accept(createItemSchema, input));
@@ -421,6 +429,122 @@ describe("updateItemSchema, an empty note means no note", () => {
 
     expect(representations.size).toBe(1);
     expect([...representations]).toEqual(['{"note":null}']);
+  });
+});
+
+/**
+ * The same ruling over `unit`: an emptied unit input is a cleared unit, not a
+ * 400. `unit` is sharper than `note` because of the coupling rule — an empty
+ * unit must be normalised away BEFORE "a unit needs a quantity" is checked, or
+ * renaming an Item while clearing its unit stays impossible from the obvious
+ * client behaviour.
+ */
+describe("createItemSchema, an empty unit means no unit", () => {
+  test("normalises an empty unit to absent", () => {
+    const parsed = accept(createItemSchema, { name: "Milk", quantity: 2, unit: "" });
+
+    expect(Object.hasOwn(parsed, "unit")).toBe(false);
+    expect(parsed).toEqual({ name: "Milk", quantity: 2 });
+  });
+
+  test("normalises a whitespace-only unit to absent", () => {
+    for (const unit of ["   ", "\t\n"]) {
+      const parsed = accept(createItemSchema, { name: "Milk", quantity: 2, unit });
+
+      expect(Object.hasOwn(parsed, "unit")).toBe(false);
+      expect(parsed).toEqual({ name: "Milk", quantity: 2 });
+    }
+  });
+
+  test("normalises a null unit to absent", () => {
+    const parsed = accept(createItemSchema, { name: "Milk", quantity: 2, unit: null });
+
+    expect(Object.hasOwn(parsed, "unit")).toBe(false);
+    expect(parsed).toEqual({ name: "Milk", quantity: 2 });
+  });
+
+  test("an empty unit with no quantity is nothing to couple, so it is accepted", () => {
+    const parsed = accept(createItemSchema, { name: "Mince", unit: "" });
+
+    expect(Object.hasOwn(parsed, "unit")).toBe(false);
+    expect(parsed).toEqual({ name: "Mince" });
+  });
+
+  test("a real unit with no quantity still rejects — the coupling rule is not weakened", () => {
+    reject(createItemSchema, { name: "Mince", unit: "kg" });
+  });
+
+  test("every spelling of no unit parses to exactly one representation", () => {
+    const spellings = [
+      { name: "Milk", quantity: 2 },
+      { name: "Milk", quantity: 2, unit: "" },
+      { name: "Milk", quantity: 2, unit: "   " },
+      { name: "Milk", quantity: 2, unit: "\t\n" },
+      { name: "Milk", quantity: 2, unit: null },
+    ];
+
+    const parsed = spellings.map((input) => accept(createItemSchema, input));
+    const representations = new Set(parsed.map((result) => JSON.stringify(result)));
+
+    for (const result of parsed) {
+      expect(Object.keys(result).sort()).toEqual(["name", "quantity"]);
+    }
+    expect(representations.size).toBe(1);
+  });
+});
+
+describe("updateItemSchema, an empty unit means no unit", () => {
+  test("clears the unit and keeps the quantity", () => {
+    expect(accept(updateItemSchema, { quantity: 3, unit: "" })).toEqual({
+      quantity: 3,
+      unit: null,
+    });
+  });
+
+  test("normalises a whitespace-only unit to a cleared unit", () => {
+    for (const unit of ["   ", "\t\n"]) {
+      expect(accept(updateItemSchema, { quantity: 3, unit }).unit).toBe(null);
+    }
+  });
+
+  test("clears the unit on its own", () => {
+    expect(accept(updateItemSchema, { unit: "" })).toEqual({ unit: null });
+  });
+
+  test("renames the Item and clears its unit in one save", () => {
+    expect(accept(updateItemSchema, { name: "Mince", unit: "" })).toEqual({
+      name: "Mince",
+      unit: null,
+    });
+  });
+
+  test("clears the quantity and the unit together when the unit is emptied", () => {
+    expect(accept(updateItemSchema, { quantity: null, unit: "" })).toEqual({
+      quantity: null,
+      unit: null,
+    });
+  });
+
+  test("still rejects a real unit alongside a cleared quantity", () => {
+    reject(updateItemSchema, { quantity: null, unit: "kg" });
+  });
+
+  test("an emptied unit and an explicit null are the same instruction", () => {
+    const viaEmpty = accept(updateItemSchema, { unit: "" });
+    const viaNull = accept(updateItemSchema, { unit: null });
+
+    expect(viaEmpty).toEqual(viaNull);
+    expect(Object.keys(viaEmpty).sort()).toEqual(Object.keys(viaNull).sort());
+  });
+
+  test("every spelling of no unit parses to exactly one representation", () => {
+    const spellings = [{ unit: null }, { unit: "" }, { unit: "   " }, { unit: "\t\n" }];
+
+    const parsed = spellings.map((input) => accept(updateItemSchema, input));
+    const representations = new Set(parsed.map((result) => JSON.stringify(result)));
+
+    expect(representations.size).toBe(1);
+    expect([...representations]).toEqual(['{"unit":null}']);
   });
 });
 
