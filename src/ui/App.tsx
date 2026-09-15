@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { byCheckedThenName } from "../lib/sort";
+import { byCheckedThenName, byName } from "../lib/sort";
 import * as api from "./api";
 import type { Item, ListSummary } from "./api";
 import { ItemRow, numberOrNull, type ItemPatch } from "./ItemRow";
@@ -122,7 +122,9 @@ export function App() {
     setItems((current) => current.map((candidate) => (candidate.id === item.id ? item : candidate)));
   }
 
-  const sorted = [...items].sort(byCheckedThenName);
+  // Ordering is the client's job for Lists as well as Items: the server orders nothing.
+  const sortedLists = [...lists].sort(byName);
+  const sortedItems = [...items].sort(byCheckedThenName);
 
   return (
     <main className="app">
@@ -133,7 +135,7 @@ export function App() {
 
       <section className="lists">
         <ul>
-          {lists.map((list) => (
+          {sortedLists.map((list) => (
             <li key={list.id}>
               <button
                 type="button"
@@ -153,7 +155,7 @@ export function App() {
           <ListHeader list={selected} onRename={rename} onDelete={removeList} />
           <AddItemForm onAdd={addItem} />
           <ul className="items">
-            {sorted.map((item) => (
+            {sortedItems.map((item) => (
               <ItemRow
                 key={item.id}
                 item={item}
