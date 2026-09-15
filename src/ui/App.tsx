@@ -84,11 +84,10 @@ export function App() {
     });
 
   const toggleChecked = (item: Item) =>
-    run(async () => {
-      if (selected === null) return;
+    runOptimistic(async (listId) => {
       // Instant: the tick lands before the request does, and the server's answer replaces it.
       replaceItem({ ...item, checked: !item.checked });
-      replaceItem(await api.setItemChecked(selected.id, item.id, !item.checked));
+      replaceItem(await api.setItemChecked(listId, item.id, !item.checked));
     });
 
   const saveItem = (item: Item, patch: ItemPatch) =>
@@ -98,10 +97,9 @@ export function App() {
     });
 
   const deleteItem = (item: Item) =>
-    run(async () => {
-      if (selected === null) return;
+    runOptimistic(async (listId) => {
       setItems((current) => current.filter((candidate) => candidate.id !== item.id));
-      await api.removeItem(selected.id, item.id);
+      await api.removeItem(listId, item.id);
     });
 
   const clearChecked = () =>
@@ -117,6 +115,42 @@ export function App() {
       await api.uncheckAllItems(selected.id);
       setItems((current) => current.map((item) => ({ ...item, checked: false })));
     });
+
+  /**
+   * An instant action that has already changed the screen. If the request is refused — a 403, a
+   * 404, a List someone else deleted — the screen is now asserting something the server rejected,
+   * so the List is refetched rather than left standing behind an error banner. ADR-0002 accepts
+   * last-write-wins; it does not accept a UI showing state the server refused.
+   *
+   * The server's answer replaces the guess, rather than an inverse computed here: undoing a tick
+   * locally would be a second guess about what the row now says.
+   */
+  function runOptimistic(action: (listId: string) => Promise<void>): Promise<void> {
+    const listId = selected?.id;
+    if (listId === undefined) return Promise.resolve();
+
+    return run(async () => {
+      try {
+        await action(listId);
+      } catch (cause) {
+        await reconcile(listId);
+        throw cause;
+      }
+    });
+  }
+
+  /** The server's version of this List, or the index if the List itself has gone. */
+  async function reconcile(listId: string): Promise<void> {
+    try {
+      const reloaded = await api.fetchList(listId);
+      setSelected(reloaded.list);
+      setItems(reloaded.items);
+    } catch {
+      setSelected(null);
+      setItems([]);
+      setLists(await api.fetchLists().catch(() => []));
+    }
+  }
 
   function replaceItem(item: Item): void {
     setItems((current) => current.map((candidate) => (candidate.id === item.id ? item : candidate)));
