@@ -1,0 +1,21 @@
+# Throwaway Postgres for `bun test`. Tests run against a real database, never a
+# mock (CONVENTIONS.md, "Tests"). Port 55433 so it cannot collide with the
+# postgres service in docker-compose.yml.
+name: slist-test
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: slist
+      POSTGRES_PASSWORD: slist
+      POSTGRES_DB: slist_test
+    ports:
+      - "55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slist -d slist_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
