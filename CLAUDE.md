@@ -104,3 +104,22 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## Conventions
+
+Read `CONVENTIONS.md` before writing code: function extraction, `Result` error
+handling, the three layers, test-first with a red step, comments, commits.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `eloraju/slist`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
