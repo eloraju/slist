@@ -19,9 +19,9 @@ afterEach(async () => {
 });
 
 test("uses the secret from the environment and stores nothing", async () => {
-  const result = await resolveSigningSecret(db.sql, "a-secret-from-the-operator");
+  const result = await resolveSigningSecret(db.sql, "an-operator-supplied-secret-of-ample-length");
 
-  expect(result).toEqual({ ok: true, value: "a-secret-from-the-operator" });
+  expect(result).toEqual({ ok: true, value: "an-operator-supplied-secret-of-ample-length" });
   const rows = await db.sql`select count(*)::int as count from app_settings where key = 'auth.signing_secret'`;
   expect(rows[0].count).toBe(0);
 });
@@ -40,7 +40,7 @@ test("an env secret never overwrites the persisted one", async () => {
   const generated = await resolveSigningSecret(db.sql, undefined);
   if (!generated.ok) throw new Error("unreachable");
 
-  await resolveSigningSecret(db.sql, "an-env-secret");
+  await resolveSigningSecret(db.sql, "an-env-secret-that-is-long-enough-to-pass");
   const afterEnvBoot = await resolveSigningSecret(db.sql, undefined);
 
   expect(afterEnvBoot).toEqual({ ok: true, value: generated.value });
@@ -56,4 +56,8 @@ test("two instances on a first boot agree on one secret", async () => {
   expect(a).toEqual(b);
   const rows = await db.sql`select count(*)::int as count from app_settings where key = 'auth.signing_secret'`;
   expect(rows[0].count).toBe(1);
+});
+
+test("refuses to start on an AUTH_SECRET shorter than 32 characters", async () => {
+  await expect(resolveSigningSecret(db.sql, "x")).rejects.toThrow(/AUTH_SECRET must be at least 32 characters/);
 });

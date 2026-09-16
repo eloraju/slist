@@ -11,11 +11,23 @@ export type SigningSecretError = { kind: "signing_secret_unavailable"; cause: un
 
 const SETTING_KEY = "auth.signing_secret";
 
+/** The generated fallback is `randomBytes(32)`; a supplied secret is held to the same bar. */
+const MINIMUM_SECRET_LENGTH = 32;
+
 export async function resolveSigningSecret(
   sql: SQL,
   envSecret: string | undefined,
 ): Promise<Result<string, SigningSecretError>> {
-  if (envSecret !== undefined && envSecret !== "") return ok(envSecret);
+  if (envSecret !== undefined && envSecret !== "") {
+    // An operator mistake at boot, not an outcome the caller can act on, so it crashes rather than
+    // joining SigningSecretError — that variant stays for the database failure it covers.
+    if (envSecret.length < MINIMUM_SECRET_LENGTH) {
+      throw new Error(
+        `AUTH_SECRET must be at least ${MINIMUM_SECRET_LENGTH} characters. Got ${envSecret.length}. Leave it unset to have one generated on first boot.`,
+      );
+    }
+    return ok(envSecret);
+  }
 
   try {
     return ok(await generateAndPersistSecret(sql));

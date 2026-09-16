@@ -23,3 +23,37 @@ test("the WebSocket URL follows the public URL's scheme and host, not the reques
   expect(websocketUrl(new URL("https://lists.example.com"), "/ws")).toBe("wss://lists.example.com/ws");
   expect(websocketUrl(new URL("http://192.168.1.50:3000"), "/ws")).toBe("ws://192.168.1.50:3000/ws");
 });
+
+test("reads the port from the environment", () => {
+  expect(loadConfig({ ...env, PORT: "8080" }).port).toBe(8080);
+});
+
+test("defaults the port to 3000 when unset", () => {
+  expect(loadConfig(env).port).toBe(3000);
+});
+
+test("refuses to start on a non-numeric PORT, naming the variable and the value", () => {
+  expect(() => loadConfig({ ...env, PORT: "300O" })).toThrow(/PORT must be a whole number.*300O/);
+});
+
+test("refuses to start on an out-of-range PORT", () => {
+  expect(() => loadConfig({ ...env, PORT: "70000" })).toThrow(/PORT must be a whole number.*70000/);
+  expect(() => loadConfig({ ...env, PORT: "-1" })).toThrow(/PORT must be a whole number.*-1/);
+  expect(() => loadConfig({ ...env, PORT: "0" })).toThrow(/PORT must be a whole number.*0/);
+});
+
+test("refuses to start on a PUBLIC_URL with no scheme, naming the variable and the value", () => {
+  expect(() => loadConfig({ ...env, PUBLIC_URL: "lists.example.com" })).toThrow(
+    /PUBLIC_URL must be a full URL.*lists\.example\.com/,
+  );
+});
+
+test("refuses to start on a PUBLIC_URL carrying a path prefix", () => {
+  expect(() => loadConfig({ ...env, PUBLIC_URL: "https://example.com/lists" })).toThrow(
+    /PUBLIC_URL must be the root of its origin.*https:\/\/example\.com\/lists/,
+  );
+});
+
+test("accepts a PUBLIC_URL written with a trailing slash", () => {
+  expect(loadConfig({ ...env, PUBLIC_URL: "https://example.com/" }).publicUrl.origin).toBe("https://example.com");
+});
