@@ -124,24 +124,32 @@ test("a failing unlock does not hide which migration failed", async () => {
   expect((result.error as { name: string }).name).toBe("0001_suicidal.sql");
 });
 
-test("a failed run releases its connection, so the next run still has a pool to work with", async () => {
-  // Two connections is exactly what one run needs: one reserved for the lock, one for the
-  // transaction. A run that strands its reserved connection leaves the next one waiting forever.
+test("a successful run leaves the pool whole for the server that boots on it", async () => {
+  // The success path is the one that matters: `src/index.ts` runs migrations and then serves the
+  // whole app from this same pool (ADR-0007), so a reserved connection that never comes back
+  // costs the running server a slot for the life of the process. The failure path cannot: a
+  // failed run exits the process (ADR-0008, migrations complete before the server binds).
+  //
+  // Two connections is exactly what one run needs — one reserved for the advisory lock, one for
+  // the transaction — so a stranded one leaves a slot that never returns. Reserving is bounded
+  // rather than awaited outright: an exhausted pool waits forever, and a timeout reports only
+  // that the test was slow.
   const pool = new SQL(db.url, { max: 2 });
-  await writeMigration(
-    "0001_suicidal.sql",
-    `select pg_terminate_backend(pid) from pg_stat_activity
-       where datname = current_database() and pid <> pg_backend_pid();
-     select 1 / 0;`,
-  );
-  await runMigrations(pool, dir).catch(() => undefined);
-
-  await rm(join(dir, "0001_suicidal.sql"));
   await writeMigration("0001_first.sql", "create table widgets (id text primary key);");
-  const second = await runMigrations(pool, dir);
-  await pool.end();
 
-  expect(second).toEqual({ ok: true, value: ["0001_first.sql"] });
+  const applied = await runMigrations(pool, dir);
+  expect(applied).toEqual({ ok: true, value: ["0001_first.sql"] });
+
+  const first = await pool.reserve();
+  const second = await Promise.race([
+    pool.reserve().then((held) => held),
+    Bun.sleep(500).then(() => "pool exhausted" as const),
+  ]);
+
+  expect(second).not.toBe("pool exhausted");
+  first.release();
+  if (second !== "pool exhausted") second.release();
+  await pool.end();
 });
 
 test("an applied migration whose file is gone stops the boot", async () => {
