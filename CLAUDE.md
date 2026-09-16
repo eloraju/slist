@@ -110,6 +110,26 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 Read `CONVENTIONS.md` before writing code: function extraction, `Result` error
 handling, the three layers, test-first with a red step, comments, commits.
 
+## Branches and worktrees
+
+Several agents work this repo at once, so the clone at `repos/o/slist` stays on
+`main` and is never used to check out a feature branch: moving its working tree
+moves it under everyone else.
+
+Every feature branch gets its own worktree, as a sibling directory:
+
+```sh
+git worktree add -b <branch> ../slist.worktrees/<branch-with-slashes-as-dashes> main
+```
+
+A fresh worktree has no gitignored files. Copy `.env` into it and run
+`bun install` before working, or the tests cannot reach Postgres. Test
+databases need no coordination: each test creates a UUID-named database
+(`src/db/test-database.ts`), so parallel runs across worktrees never collide.
+
+Finish the work by pushing the branch and opening a PR. Once it has merged,
+`git worktree remove ../slist.worktrees/<dir>`.
+
 ## Agent skills
 
 ### Issue tracker
