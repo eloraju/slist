@@ -42,15 +42,34 @@ export async function insertListWithMembership(
   return toListRecord(row);
 }
 
+/**
+ * One round trip whether or not the List exists. `authoriseList` answers `not_found` for a
+ * missing List and for one the Account cannot see, and a second query for only one of them would
+ * tell those two apart by latency (issue #11).
+ *
+ * The join is a left join because a List with no Memberships is a valid state (an Ownerless List,
+ * ADR-0004) that must still be distinguishable from a missing one: it comes back as a row whose
+ * membership columns are null, and those rows shape into an empty `memberships`.
+ */
 export async function selectListWithMemberships(sql: SQL, listId: string): Promise<ListWithMemberships | undefined> {
-  const [list] = (await sql`select id, name, created_at from lists where id = ${listId}`) as ListRow[];
-  if (list === undefined) return undefined;
+  const rows = (await sql`
+    select lists.id, lists.name, lists.created_at, memberships.list_id, memberships.account_id, memberships.role
+    from lists
+    left join memberships on memberships.list_id = lists.id
+    where lists.id = ${listId}
+  `) as JoinedRow[];
 
-  const memberships = (await sql`
-    select list_id, account_id, role from memberships where list_id = ${listId}
-  `) as MembershipRow[];
+  const [first] = rows;
+  if (first === undefined) return undefined;
 
-  return { list: toListRecord(list), memberships: memberships.map(toMembership) };
+  return { list: toListRecord(first), memberships: rows.filter(hasMembership).map(toMembership) };
+}
+
+/** A List row with the membership columns of its left join, null on the rows that matched none. */
+type JoinedRow = ListRow & { [K in keyof MembershipRow]: MembershipRow[K] | null };
+
+function hasMembership(row: JoinedRow): row is ListRow & MembershipRow {
+  return row.account_id !== null;
 }
 
 /**
