@@ -29,6 +29,8 @@ export function createAuth({ sql, secret, publicUrl }: AuthOptions) {
       type: "postgres",
     },
     secret,
+    // The origin is the whole of PUBLIC_URL by construction: loadConfig refuses a path prefix, so
+    // nothing is dropped here (ADR-0008, issue #14).
     baseURL: publicUrl.origin,
     trustedOrigins: [publicUrl.origin],
     advanced: {

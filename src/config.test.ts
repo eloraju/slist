@@ -47,3 +47,13 @@ test("refuses to start on a PUBLIC_URL with no scheme, naming the variable and t
     /PUBLIC_URL must be a full URL.*lists\.example\.com/,
   );
 });
+
+test("refuses to start on a PUBLIC_URL carrying a path prefix", () => {
+  expect(() => loadConfig({ ...env, PUBLIC_URL: "https://example.com/lists" })).toThrow(
+    /PUBLIC_URL must be the root of its origin.*https:\/\/example\.com\/lists/,
+  );
+});
+
+test("accepts a PUBLIC_URL written with a trailing slash", () => {
+  expect(loadConfig({ ...env, PUBLIC_URL: "https://example.com/" }).publicUrl.origin).toBe("https://example.com");
+});

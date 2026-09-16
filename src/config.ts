@@ -35,9 +35,16 @@ export function websocketUrl(publicUrl: URL, path: string): string {
   return url.toString();
 }
 
+/**
+ * A path prefix is refused rather than honoured: supporting one means threading it through Better
+ * Auth's basePath, the WebSocket URL, the `/*` route table, the frontend's asset base and the
+ * Invite links of Phases 2-3, which is far more work than the sub-path deploy is worth today
+ * (issue #14). Refusing it turns a silent breakage — no session, no error — into a boot failure.
+ */
 function parsePublicUrl(value: string): URL {
+  let url: URL;
   try {
-    return new URL(value);
+    url = new URL(value);
   } catch {
     // `new URL` says only "Invalid URL", which leaves the operator hunting for which variable it
     // came from — the same friendliness requireEnv gives a missing one.
@@ -45,6 +52,12 @@ function parsePublicUrl(value: string): URL {
       `PUBLIC_URL must be a full URL including the scheme, e.g. https://lists.example.com. Got: ${value}`,
     );
   }
+  if (url.pathname !== "/") {
+    throw new Error(
+      `PUBLIC_URL must be the root of its origin: slist cannot be served from a path prefix. Got: ${value}`,
+    );
+  }
+  return url;
 }
 
 /**
