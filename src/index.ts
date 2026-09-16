@@ -6,6 +6,7 @@ import { runMigrations } from "./db/migrate";
 import { createAuth } from "./auth/auth";
 import { resolveSigningSecret } from "./auth/signing-secret";
 import { appRoutes } from "./server-routes";
+import { websocket } from "./api/socket";
 
 const config = loadConfig();
 
@@ -18,6 +19,7 @@ const auth = createAuth({ sql, secret: await signingSecretOrExit(), publicUrl: c
 const server = serve({
   port: config.port,
   routes: appRoutes({ sql, auth, frontend: index }),
+  websocket,
 
   development: process.env.NODE_ENV !== "production" && { hmr: true, console: true },
 });

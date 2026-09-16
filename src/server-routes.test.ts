@@ -49,3 +49,15 @@ test("the API routes are still mounted", async () => {
 
   expect(response.status).toBe(401);
 });
+
+test("the socket route wins against the frontend wildcard, and demands a session", async () => {
+  // A plain GET is not an upgrade, so what this asserts is that `/ws` answered at all rather than
+  // serving the bundle, and that it refuses an anonymous visitor. Bun resolves routes by
+  // specificity and not by declaration order — verified, not assumed — so this stays green
+  // wherever the route sits in the table; it is here to catch the route being dropped or
+  // stopping at the session check, which is what would actually leave a client unable to connect.
+  const response = await app.browser().fetch("/ws");
+
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({ error: "unauthenticated" });
+});

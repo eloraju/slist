@@ -3,7 +3,7 @@ import type { SQL } from "bun";
 import { join } from "node:path";
 import { runMigrations } from "../db/migrate";
 import { createTestDatabase, type TestDatabase } from "../db/test-database";
-import { insertListWithMembership, selectListWithMemberships } from "./queries";
+import { deleteListById, insertListWithMembership, selectListWithMemberships } from "./queries";
 
 /**
  * Real Postgres, real migrations (CONVENTIONS.md, "Tests"): nothing about the database is stood
@@ -102,5 +102,22 @@ describe("selectListWithMemberships", () => {
     await selectListWithMemberships(existing.sql, created.id);
 
     expect(existing.roundTrips()).toBe(missing.roundTrips());
+  });
+});
+
+describe("deleteListById", () => {
+  test("returns the Memberships it removed, which nothing can be asked for afterwards", async () => {
+    const created = await insertListWithMembership(db.sql, "Shared", member, "owner");
+    await db.sql`insert into memberships (list_id, account_id, role) values (${created.id}, ${stranger}, 'editor')`;
+
+    const removed = await deleteListById(db.sql, created.id);
+
+    expect(removed.map((membership) => membership.accountId).sort()).toEqual([member, stranger].sort());
+    expect(await selectListWithMemberships(db.sql, created.id)).toBeUndefined();
+    expect(await db.sql`select 1 from memberships where list_id = ${created.id}`).toHaveLength(0);
+  });
+
+  test("deleting a List that is already gone removes nothing and says so", async () => {
+    expect(await deleteListById(db.sql, MISSING_LIST_ID)).toEqual([]);
   });
 });

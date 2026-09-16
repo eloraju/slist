@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { byCheckedThenName, byName } from "../lib/sort";
 import * as api from "./api";
 import type { Item, ListSummary } from "./api";
 import { itemFieldsFrom, type ItemFields } from "../lib/item-draft";
 import { ItemRow } from "./ItemRow";
+import { connect } from "./socket";
+import type { Message } from "../lib/wire";
 import "../index.css";
 
 /**
@@ -29,17 +31,15 @@ export function App() {
     }
   }, []);
 
-  // The one thing that happens without a click: the Lists this Account already has.
+  /**
+   * The open List, readable from a callback that was created once. The socket's dispatch needs to
+   * know what is on screen *when a message arrives*, and `selected` in its closure would be
+   * whatever was on screen when the socket opened.
+   */
+  const openListId = useRef<string | null>(null);
   useEffect(() => {
-    let unmounted = false;
-    api.fetchLists().then(
-      (loaded) => !unmounted && setLists(loaded),
-      (cause: unknown) => !unmounted && setError(messageOf(cause)),
-    );
-    return () => {
-      unmounted = true;
-    };
-  }, []);
+    openListId.current = selected?.id ?? null;
+  }, [selected]);
 
   const openList = (list: ListSummary) =>
     run(async () => {
@@ -158,6 +158,67 @@ export function App() {
       setLists(await api.fetchLists().catch(() => []));
     }
   }
+
+  /** What a freshly opened socket implies: nothing on screen is known to be current any more. */
+  function invalidateEverything(): void {
+    void refreshIndex();
+    const openId = openListId.current;
+    if (openId !== null) void reconcile(openId);
+  }
+
+  /**
+   * One message, one decision about what to refetch — never about what to *apply*, because the
+   * message carries ids and no values (ADR-0006), and the refetch is the same `reconcile` the rest
+   * of the app already uses rather than a second way to get the truth (ADR-0009).
+   *
+   * `item:*` is filtered to the open List deliberately: without that, a List someone else is
+   * shopping would have this tab refetching on every tick of a List it is not even showing. `list:*`
+   * cannot be filtered that way, since a create or a delete is precisely news about a List this tab
+   * does not have open.
+   *
+   * The namespace is matched by prefix rather than exhaustively, so that nine message types do not
+   * need nine identical branches. Phase 3's `membership:removed` obeys neither rule and will need a
+   * branch of its own before that namespace exists.
+   *
+   * A `list:delete` for the List on screen needs no special case: `reconcile` already answers a
+   * List that has gone by clearing the selection and reloading the index.
+   */
+  function invalidate(message: Message): void {
+    const openId = openListId.current;
+
+    if (message.type.startsWith("list:")) void refreshIndex();
+    if (openId !== null && message.data.listId === openId) void reconcile(openId);
+  }
+
+  /**
+   * The List index from the server. A failure here is reported like any other failed request: the
+   * socket being up means the server is reachable, so a refused or broken `/api/lists` is real news
+   * and not the socket noise the ticket keeps off the banner.
+   */
+  async function refreshIndex(): Promise<void> {
+    try {
+      setLists(await api.fetchLists());
+    } catch (cause) {
+      setError(messageOf(cause));
+    }
+  }
+
+  /**
+   * The realtime socket, and with it the only thing that happens without a click (ADR-0006).
+   *
+   * There is no separate initial load: the first `open` is the app's first fetch, and every later
+   * one is the reconnect story — "a socket that just opened may have missed anything, so invalidate
+   * what we hold". Writing those as two paths would mean two answers to one question, and only one
+   * of them would get maintained.
+   *
+   * The dependency list is empty on purpose. This is one connection per tab, and naming `selected`
+   * here would drop and reopen the socket every time someone opens a List; `openListId` above is
+   * how the callbacks stay current without that. The callbacks themselves are recreated each
+   * render but only ever touch that ref and React's own state setters, both of which are stable,
+   * so the copies captured here behave exactly like this render's.
+   */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => connect({ onOpen: invalidateEverything, onMessage: invalidate }), []);
 
   function replaceItem(item: Item): void {
     setItems((current) => current.map((candidate) => (candidate.id === item.id ? item : candidate)));

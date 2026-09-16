@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createAuth } from "./auth/auth";
 import { runMigrations } from "./db/migrate";
 import { createTestDatabase, type TestDatabase } from "./db/test-database";
+import { websocket } from "./api/socket";
 import { appRoutes } from "./server-routes";
 
 /**
@@ -38,7 +39,7 @@ export async function createAppTestServer(): Promise<AppTestServer> {
     publicUrl: new URL("http://localhost"),
   });
   const frontend = () => new Response(FRONTEND_MARKER, { headers: { "content-type": "text/html;charset=utf-8" } });
-  const server = serve({ port: 0, routes: appRoutes({ sql: db.sql, auth, frontend: frontend() }) });
+  const server = serve({ port: 0, routes: appRoutes({ sql: db.sql, auth, frontend: frontend() }), websocket });
   const url = server.url.toString().replace(/\/$/, "");
 
   return {

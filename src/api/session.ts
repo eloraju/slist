@@ -1,9 +1,10 @@
-import type { BunRequest } from "bun";
+import type { BunRequest, Server } from "bun";
 import type { Auth } from "../auth/auth";
 import type { AppError } from "../lib/errors";
 import type { Account } from "../lib/permissions";
 import { err, fromPromise, ok, type Result } from "../lib/result";
 import { respond } from "./http";
+import type { SocketData } from "./socket";
 
 /**
  * The actor behind a request. Every visitor has an Account from their first visit (ADR-0003), so
@@ -25,15 +26,19 @@ export async function requireAccount(req: Request, auth: Auth): Promise<Result<A
  * of `requireAccount` preamble, and a new one that forgot the `if (!actor.ok)` line still
  * compiled: this names that step once (CONVENTIONS.md, "Functions read as instructions"). It
  * decides nothing — who may do what stays behind `can()` in the domain layer (ADR-0005).
+ *
+ * `server` is Bun's second argument to every route handler, and it is passed on because a handler
+ * that publishes needs it (ADR-0006); dropping it here would have forced a module-level server
+ * reference instead.
  */
 export function withActor<T extends string>(
   auth: Auth,
-  handler: (req: BunRequest<T>, actor: Account) => Promise<Response>,
-): (req: BunRequest<T>) => Promise<Response> {
-  return async (req) => {
+  handler: (req: BunRequest<T>, actor: Account, server: Server<SocketData>) => Promise<Response>,
+): (req: BunRequest<T>, server: Server<SocketData>) => Promise<Response> {
+  return async (req, server) => {
     const actor = await requireAccount(req, auth);
     if (!actor.ok) return respond(actor);
 
-    return handler(req, actor.value);
+    return handler(req, actor.value, server);
   };
 }
