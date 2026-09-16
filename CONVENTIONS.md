@@ -50,6 +50,11 @@ place that has not handled it.
 Code that throws — Better Auth, the Postgres driver — is wrapped at its boundary
 with `fromPromise` so it enters the codebase as a value.
 
+The discriminator word tells you which side of the boundary you are on:
+`AppError` and every other internal union uses `kind`; messages on the wire use
+`type` (`src/lib/wire.ts`). Seeing one or the other tells a reader whether they
+are looking at a domain value or at a protocol payload.
+
 ## Where logic lives
 
 Three layers, I/O at the edges:

@@ -6,8 +6,9 @@ ordered so that each one is usable on its own.
 
 **Stack**: `Bun.serve` (HTTP + WebSocket + static frontend, one process) ·
 Postgres · `Bun.sql` · Better Auth (sharing the same pool via a Kysely dialect) ·
-React 19 · TanStack Query · Zod. No ORM, no `pg`, no Vite, no TanStack Start, no
-sync engine. **Bun 1.4+ required** (ADR-0007).
+React 19 · Zod. No ORM, no `pg`, no Vite, no TanStack Start, no sync engine, and
+no client cache library — server state is plain React state and a refetch
+(ADR-0009). **Bun 1.4+ required** (ADR-0007).
 
 ---
 
@@ -99,15 +100,31 @@ Follow-up work from both reviews is filed as #8–#17.
 
 ## Phase 2 — Realtime
 
-- `ws.subscribe("list:<id>")` on connect, authorised through `can()`.
-- Every write publishes `{ listId }` through **one** function — never a scattered
-  `server.publish` — so multi-instance fan-out is a single change later.
-- Client invalidates the matching TanStack Query key; invalidate everything on
-  reconnect.
-- Authors skip their own echo, so an optimistic edit does not flicker.
+- A `/ws` route authenticates with `requireAccount` and upgrades; `open`
+  subscribes the socket to `account:<id>` and to nothing else. There is no
+  `message` handler: the socket is strictly server-to-client (ADR-0006).
+- Every write publishes through **one** function — never a scattered
+  `server.publish` — so multi-instance fan-out is a single change later. It
+  resolves recipients from the List's Memberships through `can()`, and
+  `deleteList` returns the Memberships it removed, since after the cascade there
+  is nobody left to ask.
+- Messages are a Zod-validated discriminated union in `src/lib/wire.ts`: `type`
+  names the write, `data` carries ids and never values (ADR-0006).
+- The client dispatches on `type`: `list:*` refetches the index, and also the
+  open List when the id matches; `item:*` refetches the open List only when the
+  id matches, and is otherwise ignored.
+- Reconnect with capped exponential backoff. Every `open` — the first one
+  included — refetches the index and the open List, so there is one code path
+  rather than two. Socket failures are silent and never reach the error banner:
+  realtime is an enhancement and must never gate the app.
 
 **Done when**: two browser tabs stay in sync, and killing the socket mid-session
 recovers on reconnect.
+
+The socket's server side is covered by integration tests, including the one that
+matters most: a non-Member's socket receives nothing. The reconnect loop lives in
+the UI, which is untested by convention, so the two-tab criterion is verified by
+hand and that is recorded here rather than papered over.
 
 ## Phase 3 — Sharing
 
@@ -139,7 +156,8 @@ recovers on reconnect.
 
 ## Deliberately not in scope
 
-Offline-first edit queues (ADR-0002) · database-backed custom Roles (ADR-0005) ·
-approval workflows · patch-carrying WebSocket messages (ADR-0006) · server-side
-Item ordering · structured quantity parsing · email invites, and therefore SMTP
-configuration.
+Offline-first edit queues and retry of failed requests (ADR-0002) ·
+database-backed custom Roles (ADR-0005) · approval workflows · patch-carrying
+WebSocket messages and RPC over the socket (ADR-0006) · a client cache library
+(ADR-0009) · server-side Item ordering · structured quantity parsing · email
+invites, and therefore SMTP configuration.
