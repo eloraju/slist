@@ -28,7 +28,9 @@ async function membershipRoleOn(listId: string): Promise<string> {
 }
 
 test("the column accepts a Role the old check constraint refused", async () => {
-  const list = await insertListWithMembership(server.sql, "Groceries", actor.accountId, "owner");
+  // Its own Account: the row it leaves behind is one the read boundary refuses, by design.
+  const smuggler = await server.signIn();
+  const list = await insertListWithMembership(server.sql, "Groceries", smuggler.accountId, "owner");
 
   await server.sql`update memberships set role = 'viewer' where list_id = ${list.id}`;
 
@@ -46,4 +48,12 @@ test("every Role the code knows round-trips through Postgres and can() resolves 
     expect(candidate.memberships[0]?.role).toBe(role);
     expect(can({ id: actor.accountId }, "list:read", { id: list.id, memberships: candidate.memberships })).toBe(true);
   }
+});
+
+test("a stored Role the code does not know is refused at the read boundary, not handed to can()", async () => {
+  const stranger = await server.signIn();
+  const list = await insertListWithMembership(server.sql, "Smuggled", stranger.accountId, "owner");
+  await server.sql`update memberships set role = 'viewer' where list_id = ${list.id}`;
+
+  expect(selectListCandidatesFor(server.sql, stranger.accountId)).rejects.toThrow(/viewer/);
 });

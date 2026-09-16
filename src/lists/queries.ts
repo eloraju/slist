@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import type { Membership, Role } from "../lib/permissions";
+import { parseRole, type Membership, type Role } from "../lib/permissions";
 
 /**
  * Every line of SQL about Lists and Memberships, and no decisions (CONVENTIONS.md, "Where logic
@@ -10,7 +10,7 @@ export type ListRecord = { id: string; name: string; createdAt: string };
 export type ListWithMemberships = { list: ListRecord; memberships: Membership[] };
 
 type ListRow = { id: string; name: string; created_at: Date };
-type MembershipRow = { list_id: string; account_id: string; role: Role };
+type MembershipRow = { list_id: string; account_id: string; role: string };
 
 /**
  * The List and its creator's Membership commit together: a List that exists with nobody able to
@@ -97,6 +97,19 @@ function toListRecord(row: ListRow): ListRecord {
   return { id: row.id, name: row.name, createdAt: row.created_at.toISOString() };
 }
 
+/**
+ * A row comes back as text, and nothing in the schema says which Roles exist (ADR-0005, amended),
+ * so the Role is narrowed here rather than asserted. An unrecognised value is a violated
+ * invariant — someone wrote a Role by hand, or an older image is reading a newer database — and a
+ * query function cannot decide what to do about it, so it throws (CONVENTIONS.md, "Errors are
+ * values"). The alternative is worse: casting hands `can()` a Role that is not one, and the app
+ * fails somewhere that never mentions the row.
+ */
 function toMembership(row: MembershipRow): Membership {
-  return { listId: row.list_id, accountId: row.account_id, role: row.role };
+  const role = parseRole(row.role);
+  if (role === undefined) {
+    throw new Error(`membership (${row.list_id}, ${row.account_id}) has an unknown role ${JSON.stringify(row.role)}`);
+  }
+
+  return { listId: row.list_id, accountId: row.account_id, role };
 }
