@@ -30,13 +30,13 @@ export function App() {
 
   // The one thing that happens without a click: the Lists this Account already has.
   useEffect(() => {
-    let abandoned = false;
+    let unmounted = false;
     api.fetchLists().then(
-      (loaded) => !abandoned && setLists(loaded),
-      (cause: unknown) => !abandoned && setError(messageOf(cause)),
+      (loaded) => !unmounted && setLists(loaded),
+      (cause: unknown) => !unmounted && setError(messageOf(cause)),
     );
     return () => {
-      abandoned = true;
+      unmounted = true;
     };
   }, []);
 

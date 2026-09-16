@@ -16,13 +16,13 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    let abandoned = false;
+    let unmounted = false;
     ensureSession(browserFetch).then((session) => {
-      if (abandoned) return;
+      if (unmounted) return;
       setBootstrap({ state: session.ok ? "ready" : "unavailable" });
     });
     return () => {
-      abandoned = true;
+      unmounted = true;
     };
   }, [attempt]);
 

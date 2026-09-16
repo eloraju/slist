@@ -37,7 +37,7 @@ export async function editItem(
   const list = await authoriseList(sql, actor, listId, "item:update");
   if (!list.ok) return list;
 
-  const edited = await updateItemFields(sql, listId, itemId, withoutAnOrphanedUnit(input));
+  const edited = await updateItemFields(sql, listId, itemId, withoutAUnitForNoQuantity(input));
   return edited === undefined ? err({ kind: "not_found" }) : ok(edited);
 }
 
@@ -99,6 +99,6 @@ export async function uncheckAllItems(
  * `{ quantity: null }`, but the Item would be left measuring "kg" of nothing — a state the Zod
  * schemas and the database both refuse for every other route into it.
  */
-function withoutAnOrphanedUnit(input: UpdateItemInput): UpdateItemInput {
+function withoutAUnitForNoQuantity(input: UpdateItemInput): UpdateItemInput {
   return input.quantity === null ? { ...input, unit: null } : input;
 }
