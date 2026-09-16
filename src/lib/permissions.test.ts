@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { Account, List, Membership, Permission } from "./permissions";
-import { PERMISSIONS, can } from "./permissions";
+import { PERMISSIONS, ROLES, can, parseRole } from "./permissions";
 
 const owner: Account = { id: "account-owner" };
 const secondOwner: Account = { id: "account-second-owner" };
@@ -167,5 +167,29 @@ describe("can, several Memberships on one List", () => {
 
     expect(can(editor, "membership:promote", list)).toBe(false);
     expect(can(editor, "membership:remove", list)).toBe(false);
+  });
+});
+
+/**
+ * The check constraint on `memberships.role` is gone (ADR-0005, amended), so this is the only
+ * thing standing between a string and a Role. A cast would not be: it compiles and lies.
+ */
+describe("parseRole", () => {
+  test("narrows every Role the code knows", () => {
+    for (const role of ROLES) {
+      expect(parseRole(role)).toBe(role);
+    }
+  });
+
+  test("refuses a string that is not a Role", () => {
+    expect(parseRole("viewer")).toBeUndefined();
+    expect(parseRole("OWNER")).toBeUndefined();
+    expect(parseRole("")).toBeUndefined();
+  });
+
+  test("refuses a value that is not a string at all", () => {
+    expect(parseRole(undefined)).toBeUndefined();
+    expect(parseRole(null)).toBeUndefined();
+    expect(parseRole(7)).toBeUndefined();
   });
 });

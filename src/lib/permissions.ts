@@ -10,6 +10,15 @@ export const ROLES = ["owner", "editor"] as const;
 
 export type Role = (typeof ROLES)[number];
 
+/**
+ * The one narrowing from a string to a Role, and since ADR-0005's amendment the only guard there
+ * is: `memberships.role` carries no check constraint, so a value read back out of Postgres is
+ * untrusted text until it has been through here. A cast would compile and prove nothing.
+ */
+export function parseRole(value: unknown): Role | undefined {
+  return ROLES.find((role) => role === value);
+}
+
 export const PERMISSIONS = [
   "list:read",
   "list:update",
