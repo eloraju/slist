@@ -15,7 +15,7 @@ export type Fetcher = (path: string, init?: RequestInit) => Promise<Response>;
 /**
  * One bootstrap per page, however many callers ask for it. React StrictMode runs effects twice in
  * development and a retry button can overlap with an in-flight attempt; without this they race
- * the cookie and the second one signs in again, leaving an orphaned Account behind.
+ * the cookie and the second one signs in again, leaving a second Account behind.
  */
 let inFlight: Promise<Result<Session, SessionError>> | null = null;
 

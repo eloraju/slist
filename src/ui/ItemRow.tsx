@@ -63,7 +63,7 @@ type ItemEditorProps = {
 };
 
 function ItemEditor({ item, onSave, onCancel }: ItemEditorProps) {
-  // The draft lives here and nowhere else, so abandoning it is Cancel doing nothing.
+  // The draft lives here and nowhere else, so discarding it is Cancel doing nothing.
   const [name, setName] = useState(item.name);
   const [quantity, setQuantity] = useState(item.quantity === null ? "" : String(item.quantity));
   const [unit, setUnit] = useState(item.unit ?? "");
