@@ -12,15 +12,16 @@ export type AppConfig = {
   port: number;
 };
 
+const DEFAULT_PORT = 3000;
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // A missing or malformed PUBLIC_URL is not something a caller can recover from: the app cannot
   // build a correct cookie or link without it, so this throws rather than returning a Result.
-  const publicUrl = new URL(requireEnv(env, "PUBLIC_URL"));
   return {
-    publicUrl,
+    publicUrl: parsePublicUrl(requireEnv(env, "PUBLIC_URL")),
     databaseUrl: requireEnv(env, "DATABASE_URL"),
     authSecret: env.AUTH_SECRET,
-    port: Number(env.PORT ?? 3000),
+    port: parsePort(env.PORT),
   };
 }
 
@@ -32,6 +33,31 @@ export function websocketUrl(publicUrl: URL, path: string): string {
   const url = new URL(path, publicUrl);
   url.protocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
+}
+
+function parsePublicUrl(value: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    // `new URL` says only "Invalid URL", which leaves the operator hunting for which variable it
+    // came from — the same friendliness requireEnv gives a missing one.
+    throw new Error(
+      `PUBLIC_URL must be a full URL including the scheme, e.g. https://lists.example.com. Got: ${value}`,
+    );
+  }
+}
+
+/**
+ * `Number("300O")` is `NaN`, which `Bun.serve` reads as "pick a port for me" — the app then binds
+ * somewhere the operator did not ask for and docker-compose's port mapping points at nothing.
+ */
+function parsePort(value: string | undefined): number {
+  if (value === undefined || value === "") return DEFAULT_PORT;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`PORT must be a whole number between 1 and 65535. Got: ${value}`);
+  }
+  return port;
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
