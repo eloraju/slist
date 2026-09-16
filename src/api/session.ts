@@ -1,7 +1,9 @@
+import type { BunRequest } from "bun";
 import type { Auth } from "../auth/auth";
 import type { AppError } from "../lib/errors";
 import type { Account } from "../lib/permissions";
 import { err, fromPromise, ok, type Result } from "../lib/result";
+import { respond } from "./http";
 
 /**
  * The actor behind a request. Every visitor has an Account from their first visit (ADR-0003), so
@@ -16,4 +18,22 @@ export async function requireAccount(req: Request, auth: Auth): Promise<Result<A
   if (session.value === null) return err({ kind: "unauthenticated" });
 
   return ok({ id: session.value.user.id });
+}
+
+/**
+ * A handler that has already been handed its actor. Ten handlers opened with the same two lines
+ * of `requireAccount` preamble, and a new one that forgot the `if (!actor.ok)` line still
+ * compiled: this names that step once (CONVENTIONS.md, "Functions read as instructions"). It
+ * decides nothing — who may do what stays behind `can()` in the domain layer (ADR-0005).
+ */
+export function withActor<T extends string>(
+  auth: Auth,
+  handler: (req: BunRequest<T>, actor: Account) => Promise<Response>,
+): (req: BunRequest<T>) => Promise<Response> {
+  return async (req) => {
+    const actor = await requireAccount(req, auth);
+    if (!actor.ok) return respond(actor);
+
+    return handler(req, actor.value);
+  };
 }
