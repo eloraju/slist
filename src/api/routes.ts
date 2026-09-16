@@ -14,7 +14,7 @@ import {
 import { map, ok, type Result } from "../lib/result";
 import type { AppError } from "../lib/errors";
 import { parseBody, parseId, respond } from "./http";
-import { requireAccount } from "./session";
+import { withActor } from "./session";
 
 /**
  * Route handlers parse input, call one domain function and map its `Result` to a response, and
@@ -26,131 +26,108 @@ export type ApiDeps = { sql: SQL; auth: Auth };
 export function apiRoutes({ sql, auth }: ApiDeps) {
   return {
     "/api/lists": {
-      GET: async (req: BunRequest<"/api/lists">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
-
-        const lists = await listListsFor(sql, actor.value);
+      GET: withActor(auth, async (_req: BunRequest<"/api/lists">, actor) => {
+        const lists = await listListsFor(sql, actor);
         return respond(map(lists, (value) => ({ lists: value })));
-      },
+      }),
 
-      POST: async (req: BunRequest<"/api/lists">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      POST: withActor(auth, async (req: BunRequest<"/api/lists">, actor) => {
         const input = await parseBody(req, createListSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await createList(sql, actor.value, input.value), 201);
-      },
+        return respond(await createList(sql, actor, input.value), 201);
+      }),
     },
 
     "/api/lists/:listId": {
-      GET: async (req: BunRequest<"/api/lists/:listId">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      GET: withActor(auth, async (req: BunRequest<"/api/lists/:listId">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
 
-        return respond(await readList(sql, actor.value, listId.value));
-      },
+        return respond(await readList(sql, actor, listId.value));
+      }),
 
-      PATCH: async (req: BunRequest<"/api/lists/:listId">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      PATCH: withActor(auth, async (req: BunRequest<"/api/lists/:listId">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
         const input = await parseBody(req, updateListSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await renameList(sql, actor.value, listId.value, input.value));
-      },
+        return respond(await renameList(sql, actor, listId.value, input.value));
+      }),
 
-      DELETE: async (req: BunRequest<"/api/lists/:listId">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      DELETE: withActor(auth, async (req: BunRequest<"/api/lists/:listId">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
 
-        return respond(await deleteList(sql, actor.value, listId.value));
-      },
+        return respond(await deleteList(sql, actor, listId.value));
+      }),
     },
 
     "/api/lists/:listId/items": {
-      POST: async (req: BunRequest<"/api/lists/:listId/items">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      POST: withActor(auth, async (req: BunRequest<"/api/lists/:listId/items">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
         const input = await parseBody(req, createItemSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await addItem(sql, actor.value, listId.value, input.value), 201);
-      },
+        return respond(await addItem(sql, actor, listId.value, input.value), 201);
+      }),
     },
 
     "/api/lists/:listId/items/:itemId": {
-      PATCH: async (req: BunRequest<"/api/lists/:listId/items/:itemId">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      PATCH: withActor(auth, async (req: BunRequest<"/api/lists/:listId/items/:itemId">, actor) => {
         const ids = parseItemPath(req.params);
         if (!ids.ok) return respond(ids);
         const input = await parseBody(req, updateItemSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await editItem(sql, actor.value, ids.value.listId, ids.value.itemId, input.value));
-      },
+        return respond(await editItem(sql, actor, ids.value.listId, ids.value.itemId, input.value));
+      }),
 
-      DELETE: async (req: BunRequest<"/api/lists/:listId/items/:itemId">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      DELETE: withActor(auth, async (req: BunRequest<"/api/lists/:listId/items/:itemId">, actor) => {
         const ids = parseItemPath(req.params);
         if (!ids.ok) return respond(ids);
 
-        return respond(await removeItem(sql, actor.value, ids.value.listId, ids.value.itemId));
-      },
+        return respond(await removeItem(sql, actor, ids.value.listId, ids.value.itemId));
+      }),
     },
 
     // Checking an Item is its own endpoint, so an edit behind save/cancel and an instant tick
     // never contend for the same payload.
     "/api/lists/:listId/items/:itemId/checked": {
-      PUT: async (req: BunRequest<"/api/lists/:listId/items/:itemId/checked">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      PUT: withActor(auth, async (req: BunRequest<"/api/lists/:listId/items/:itemId/checked">, actor) => {
         const ids = parseItemPath(req.params);
         if (!ids.ok) return respond(ids);
         const input = await parseBody(req, setItemCheckedSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await setItemChecked(sql, actor.value, ids.value.listId, ids.value.itemId, input.value));
-      },
+        return respond(await setItemChecked(sql, actor, ids.value.listId, ids.value.itemId, input.value));
+      }),
     },
 
     // The bulk actions hang off the List, not off `items`, because the action is the whole List
     // and takes no Items to act on.
     "/api/lists/:listId/clear-checked": {
-      POST: async (req: BunRequest<"/api/lists/:listId/clear-checked">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      POST: withActor(auth, async (req: BunRequest<"/api/lists/:listId/clear-checked">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
         const input = await parseBody(req, clearCheckedItemsSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await clearCheckedItems(sql, actor.value, listId.value));
-      },
+        return respond(await clearCheckedItems(sql, actor, listId.value));
+      }),
     },
 
     "/api/lists/:listId/uncheck-all": {
-      POST: async (req: BunRequest<"/api/lists/:listId/uncheck-all">) => {
-        const actor = await requireAccount(req, auth);
-        if (!actor.ok) return respond(actor);
+      POST: withActor(auth, async (req: BunRequest<"/api/lists/:listId/uncheck-all">, actor) => {
         const listId = parseId(req.params.listId, "listId");
         if (!listId.ok) return respond(listId);
         const input = await parseBody(req, uncheckAllItemsSchema);
         if (!input.ok) return respond(input);
 
-        return respond(await uncheckAllItems(sql, actor.value, listId.value));
-      },
+        return respond(await uncheckAllItems(sql, actor, listId.value));
+      }),
     },
   };
 }
