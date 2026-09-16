@@ -7,8 +7,9 @@ import { ItemRow } from "./ItemRow";
 import "../index.css";
 
 /**
- * One person, one device, one real shopping list. Instant actions — tick, delete, the two bulk
- * actions — fire on the click and then reconcile with the server's answer. Edited fields sit
+ * One person, one device, one real shopping list. All four instant actions — tick, delete and the
+ * two bulk actions — follow one rule: the screen changes on the click, before the request is
+ * sent, and a refusal reconciles it against the server (`runOptimistic`). Edited fields sit
  * behind Save and Cancel (ADR-0002).
  *
  * Sorting is here, never on the server: Items have no inherent order.
@@ -104,17 +105,15 @@ export function App() {
     });
 
   const clearChecked = () =>
-    run(async () => {
-      if (selected === null) return;
-      await api.clearCheckedItems(selected.id);
+    runOptimistic(async (listId) => {
       setItems((current) => current.filter((item) => !item.checked));
+      await api.clearCheckedItems(listId);
     });
 
   const uncheckAll = () =>
-    run(async () => {
-      if (selected === null) return;
-      await api.uncheckAllItems(selected.id);
+    runOptimistic(async (listId) => {
       setItems((current) => current.map((item) => ({ ...item, checked: false })));
+      await api.uncheckAllItems(listId);
     });
 
   /**
@@ -125,6 +124,13 @@ export function App() {
    *
    * The server's answer replaces the guess, rather than an inverse computed here: undoing a tick
    * locally would be a second guess about what the row now says.
+   *
+   * Only an action with an answer to use can do that. The bulk endpoints reply with a count
+   * (`{ removed }`, `{ unchecked }`) and not the new Items, so `clearChecked` and `uncheckAll`
+   * keep their local filter and map on success. That is the same rule, not a weaker one: a
+   * request that was accepted leaves the screen alone, and only a refusal refetches. Refetching
+   * on success would buy a second round trip to confirm a change the client already computed
+   * exactly from the rows it is showing.
    */
   function runOptimistic(action: (listId: string) => Promise<void>): Promise<void> {
     const listId = selected?.id;
