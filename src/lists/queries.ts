@@ -107,9 +107,24 @@ export async function updateListName(sql: SQL, listId: string, name: string): Pr
   return row === undefined ? undefined : toListRecord(row);
 }
 
-/** Items and Memberships go with the List through `on delete cascade`. */
-export async function deleteListById(sql: SQL, listId: string): Promise<void> {
-  await sql`delete from lists where id = ${listId}`;
+/**
+ * Items go with the List through `on delete cascade`. The Memberships would too, but a cascade
+ * cannot hand back the rows it removed and the caller needs them (ADR-0006), so they are deleted
+ * by name — in the same transaction as the List, or a failure half way would leave a List nobody
+ * can see.
+ */
+export async function deleteListById(sql: SQL, listId: string): Promise<Membership[]> {
+  const rows = (await sql.begin(async (tx) => {
+    const removed = (await tx`
+      delete from memberships where list_id = ${listId}
+      returning list_id, account_id, role
+    `) as MembershipRow[];
+
+    await tx`delete from lists where id = ${listId}`;
+    return removed;
+  })) as unknown as MembershipRow[];
+
+  return rows.map(toMembership);
 }
 
 function toListRecord(row: ListRow): ListRecord {

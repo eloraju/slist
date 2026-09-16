@@ -1,7 +1,7 @@
 import type { SQL } from "bun";
 import { selectItemsForList, type ItemRecord } from "../items/queries";
 import type { AppError } from "../lib/errors";
-import type { Account, Role } from "../lib/permissions";
+import type { Account, Membership, Role } from "../lib/permissions";
 import { err, ok, type Result } from "../lib/result";
 import type { CreateListInput, UpdateListInput } from "../lib/schemas";
 import { authoriseList, listsVisibleTo } from "./access";
@@ -58,10 +58,15 @@ export async function renameList(
   return renamed === undefined ? err({ kind: "not_found" }) : ok(renamed);
 }
 
-export async function deleteList(sql: SQL, actor: Account, listId: string): Promise<Result<null, AppError>> {
+/**
+ * The Memberships it removed are the value, not `null`: they are a true fact about what the
+ * operation did, and after the cascade there is nobody left to ask who held one. The caller that
+ * notifies former Members (ADR-0006) is the reason anyone wants to know, but it is not the reason
+ * it is true.
+ */
+export async function deleteList(sql: SQL, actor: Account, listId: string): Promise<Result<Membership[], AppError>> {
   const list = await authoriseList(sql, actor, listId, "list:delete");
   if (!list.ok) return list;
 
-  await deleteListById(sql, listId);
-  return ok(null);
+  return ok(await deleteListById(sql, listId));
 }
