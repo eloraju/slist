@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Dependencies first, so a source change does not reinstall them.
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --production
 
 COPY . .
 
